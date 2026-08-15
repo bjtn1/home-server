@@ -106,7 +106,7 @@ jellyfin.bjtn.xyz {
   reverse_proxy jellyfin:8096
 }
 
-jellyseerr.bjtn.xyz {
+seerr.bjtn.xyz {
   import porkbun_tls
   reverse_proxy jellyseerr:5055
 }

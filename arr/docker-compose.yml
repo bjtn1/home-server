@@ -136,15 +136,14 @@ services:
     networks:
         - bjtn-proxy
 
-  jellyseerr:
-    image: fallenbagel/jellyseerr:latest
-    container_name: jellyseerr
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    init: true
+    container_name: seerr
     environment:
       - TZ=America/New_York
     volumes:
       - ./jellyseerr/config:/app/config
-    #ports:
-      #- 5055:5055
     restart: unless-stopped
     networks:
         - bjtn-proxy

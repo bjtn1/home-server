@@ -1,0 +1,35 @@
+
+services:
+  upsnap:
+    cap_add:
+      - NET_RAW # NET_RAW is required for privileged ping and network device scan (nmap)
+    cap_drop:
+      - ALL
+    container_name: upsnap
+    image: ghcr.io/seriousm4x/upsnap:5 # images are also available on docker hub: seriousm4x/upsnap:5
+    network_mode: host # host is required for WOL magic packets
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/pb_data
+    # # To use a non-root user, create the mountpoint first (mkdir data) so that it has the right permission.
+    user: 1000:1000
+    environment:
+      - TZ=America/New_York # Set container timezone for cron schedules
+      - UPSNAP_HTTP_LISTEN=0.0.0.0:8091
+      - UPSNAP_INTERVAL=*/10 * * * * * # Sets the interval in which the devices are pinged
+      - UPSNAP_SCAN_RANGE=192.168.1.0/24 # Scan range is used for device discovery on local network
+      - UPSNAP_SCAN_TIMEOUT=500ms # Scan timeout is nmap's --host-timeout value to wait for devices (https://nmap.org/book/man-performance.html)
+  #   - UPSNAP_PING_PRIVILEGED=true # Default is true. Set to false for unprivileged ping
+  #     For Linux hosts, unprivileged pings REQUIRES the host to set 'sysctl net.ipv4.ping_group_range="0 2147483647"'
+  #     or another suitable value to grant the group access to send ping and WOL magic packets.
+  #   - UPSNAP_WEBSITE_TITLE=Custom name # Custom website title
+    # security_opt:
+    #   - no-new-privileges=true
+    # # dns is used for name resolution during network scan
+    # dns:
+    #   - 192.18.0.1
+    #   - 192.18.0.2
+
+networks:
+  bjtn-proxy:
+    external: true

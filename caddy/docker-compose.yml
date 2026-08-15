@@ -1,0 +1,22 @@
+services:
+  caddy:
+    build: .
+    container_name: caddy
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy_data:/data
+      - ./caddy_config:/config
+    networks:
+      - bjtn-proxy
+    restart: unless-stopped
+    extra_hosts:
+       - "host.docker.internal:host-gateway"
+
+networks:
+  bjtn-proxy:
+    external: true
+

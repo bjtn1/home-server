@@ -1,0 +1,16 @@
+services:
+  samba:
+    image: dockurr/samba
+    container_name: samba
+    environment:
+      NAME: "mnt"
+      USER: "bjtn"
+      PASS: "REDACTED_PIHOLE_PASSWORD"
+      UID: "1000"
+      GID: "1000"
+    ports:
+      - 445:445
+    volumes:
+      #- ./samba:/storage
+      - /mnt:/storage
+    restart: unless-stopped

@@ -1,0 +1,10 @@
+# ignore everything by default
+*
+# but let git look inside directories
+!*/
+# only these files are ever tracked, no matter where they live
+!docker-compose.yml
+!docker-compose.yaml
+!Caddyfile
+!.gitignore
+!.env.example

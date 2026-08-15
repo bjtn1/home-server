@@ -1,0 +1,184 @@
+# this is the DNS stuff we need for every entry
+
+(porkbun_tls) {
+  tls {
+    dns porkbun {
+      api_key {env.PORKBUN_API_KEY}
+      api_secret_key {env.PORKBUN_API_SECRET_KEY}
+    }
+  }
+}
+
+########################################################
+################### PIHOLE #############################
+########################################################
+
+# for pihole
+pihole.bjtn.xyz {
+  import porkbun_tls
+  redir / /admin/
+  reverse_proxy pihole:80
+}
+
+# for pihole (but shorter cause I am lazy)
+pi.bjtn.xyz {
+  import porkbun_tls
+  redir / /admin/
+  reverse_proxy pihole:80
+}
+
+########################################################
+################### SYNCTHING ##########################
+########################################################
+
+# raspberry pi syncthing GUI
+pi-sync.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy syncthing:8384 {
+    # we need this because otherwise we'll get a "host check error"
+    header_up Host {upstream_hostport}
+  }
+}
+
+# kindle's syncthing GUI
+kindle.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy 100.101.80.38:8384 {
+    # we need this because otherwise we'll get a "host check error"
+    header_up Host {upstream_hostport}
+  }
+}
+
+# steamdeck's syncthing GUI
+steamdeck.bjtn.xyz {
+  import porkbun_tls 
+  reverse_proxy 100.65.182.44:8384 {
+    # we need this because otherwise we'll get a "host check error"
+    header_up Host {upstream_hostport}
+  }
+}
+
+# ayn thor syncthing GUI
+thor.bjtn.xyz {
+  import porkbun_tls 
+	reverse_proxy 100.83.201.58:8384 {
+    # we need this because otherwise we'll get a "host check error"
+		header_up Host {upstream_hostport}
+	}
+}
+
+# music tablet's syncthing GUI
+music.bjtn.xyz {
+  import porkbun_tls 
+	reverse_proxy 100.74.227.72:8384 {
+    # we need this because otherwise we'll get a "host check error"
+		header_up Host {upstream_hostport}
+	}
+}
+
+
+########################################################
+################### ARR STACK ##########################
+########################################################
+
+sonarr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy sonarr:8989
+}
+
+radarr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy radarr:7878
+}
+
+prowlarr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy prowlarr:9696
+}
+
+bazarr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy bazarr:6767
+}
+
+jellyfin.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy jellyfin:8096
+}
+
+jellyseerr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy jellyseerr:5055
+}
+
+shelfmark.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy shelfmark:8084
+}
+
+books.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy shelfmark:8084
+}
+
+
+qbit.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy gluetun:8181
+}
+
+########################################################
+################### OTHER ##############################
+########################################################
+
+# for portainer
+portainer.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy https://portainer:9443 {
+    transport http {
+      tls_insecure_skip_verify
+    }
+  }
+}
+
+# for immich
+immich.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy immich:2283
+}
+
+beszel.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy beszel:8090
+}
+
+dozzle.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy dozzle:8080
+}
+
+logs.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy dozzle:8080
+}
+
+home.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy homarr:7575
+}
+
+homarr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy homarr:7575
+}
+
+upsnap.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy 192.168.1.25:8091
+}
+
+wol.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy 192.168.1.25:8091
+}
+

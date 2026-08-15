@@ -1,0 +1,171 @@
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - VPN_SERVICE_PROVIDER=protonvpn
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${wireguard_private_key}
+      - TZ=America/New_York
+      - WIREGUARD_KERNEL_MODULE=false
+    volumes:
+      - ./gluetun/auth/config.toml:/gluetun/auth/config.toml:ro
+    ports:
+      #- 8181:8181
+      - 6881:6881
+      - 6881:6881/udp
+      - 8001:8000
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+    restart: unless-stopped
+    networks:
+      - bjtn-proxy
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    network_mode: service:gluetun
+    depends_on:
+      - gluetun
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - WEBUI_PORT=8181
+    volumes:
+      - ./qbittorrent/config:/config
+      - ${downloads}:/downloads
+      - ${media}:/mnt/media
+      - ${emu}:/mnt/emu
+      - ${games}:/mnt/games
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=info
+      - TZ=America/New_York
+    #ports:
+      #- 8191:8191
+    restart: unless-stopped
+    networks:
+        - bjtn-proxy
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./prowlarr/config:/config
+    #ports:
+      #- 9696:9696
+    restart: unless-stopped
+    networks:
+        - bjtn-proxy
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./sonarr/config:/config
+      - ${tv}:/tv
+      - ${downloads}:/downloads
+    #ports:
+      #- 8989:8989
+    restart: unless-stopped
+    networks:
+        - bjtn-proxy
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./radarr/config:/config
+      - ${movies}:/movies
+      - ${downloads}:/downloads
+    #ports:
+      #- 7878:7878
+    restart: unless-stopped
+    networks:
+        - bjtn-proxy
+
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - TZ=America/New_York
+    volumes:
+      - ./jellyfin/config:/config
+      - ./jellyfin/cache:/cache
+      - ${media}:/media:ro
+      - ${obs}:/obs:ro
+    #ports:
+      #- 8096:8096
+    restart: unless-stopped
+    networks:
+        - bjtn-proxy
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./bazarr/config:/config
+      - ${movies}:/movies
+      - ${tv}:/tv
+    #ports:
+      #- 6767:6767
+    restart: unless-stopped
+    networks:
+        - bjtn-proxy
+
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    environment:
+      - TZ=America/New_York
+    volumes:
+      - ./jellyseerr/config:/app/config
+    #ports:
+      #- 5055:5055
+    restart: unless-stopped
+    networks:
+        - bjtn-proxy
+
+  shelfmark:
+    image: ghcr.io/calibrain/shelfmark:latest
+    container_name: shelfmark
+    environment:
+      PUID: 1000
+      PGID: 1000
+    #ports:
+      #- 8084:8084
+    restart: unless-stopped
+    volumes:
+      - ${books}:/books # Default destination for book downloads
+      - ./shelfmark/config:/config # App configuration
+      # Required for torrent / usenet - path must match your download client's volume exactly
+      # - /path/to/downloads:/path/to/downloads
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

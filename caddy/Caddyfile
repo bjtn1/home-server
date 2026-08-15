@@ -108,7 +108,7 @@ jellyfin.bjtn.xyz {
 
 seerr.bjtn.xyz {
   import porkbun_tls
-  reverse_proxy jellyseerr:5055
+  reverse_proxy seerr:5055
 }
 
 shelfmark.bjtn.xyz {

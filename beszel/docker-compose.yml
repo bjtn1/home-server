@@ -31,7 +31,7 @@ services:
       LISTEN: /beszel_socket/beszel.sock
       HUB_URL: http://localhost:8090
       KEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDoo8A/nUkllQgudh73PshGVkVPC2OI7R25p+WqS5zB7'
-      TOKEN: REDACTED_BESZEL_TOKEN
+      TOKEN: ${TOKEN}
     # healthcheck:
     #   test: ['CMD', '/agent', 'health']
     #   interval: 120s

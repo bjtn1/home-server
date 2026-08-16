@@ -12,7 +12,8 @@ repo_root="$(git rev-parse --show-toplevel)"
 echo "🔍 Scanning repo history for secrets (gitleaks) before push..."
 
 if ! docker run --rm -v "$repo_root:/repo:ro" zricethezav/gitleaks:latest \
-  detect --redact --source /repo --config /repo/.gitleaks.toml -v; then
+  detect --redact --source /repo --config /repo/.gitleaks.toml \
+  --baseline-path /repo/.gitleaks-baseline.json -v; then
   echo
   echo "❌ gitleaks found a potential secret in repo history. Push blocked."
   echo "   Fix it, or if this is a false positive, adjust .gitleaks.toml's allowlist."

@@ -9,5 +9,6 @@
 !.gitignore
 !.env.example
 !/.gitleaks.toml
+!/.gitleaks-baseline.json
 !/.githooks/
 !/.githooks/**

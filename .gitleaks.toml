@@ -17,3 +17,8 @@ regexes = [
   # SSH public keys are meant to be shared, not secret.
   '''ssh-(ed25519|rsa) [A-Za-z0-9+/]+={0,3}''',
 ]
+paths = [
+  # Records already-accepted findings (e.g. old redaction placeholders);
+  # it verbatim contains match text by design, not a live secret.
+  '''\.gitleaks-baseline\.json$''',
+]

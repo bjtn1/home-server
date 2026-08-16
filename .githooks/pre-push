@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Second safety net: scans the whole repo history for secrets before
+# pushing, in case a commit slipped through with `--no-verify` or the
+# hook was added after older commits. Uses gitleaks (via Docker)
+# against the rules in .gitleaks.toml.
+#
+# Enable with: git config core.hooksPath .githooks
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+echo "🔍 Scanning repo history for secrets (gitleaks) before push..."
+
+if ! docker run --rm -v "$repo_root:/repo:ro" zricethezav/gitleaks:latest \
+  detect --redact --source /repo --config /repo/.gitleaks.toml -v; then
+  echo
+  echo "❌ gitleaks found a potential secret in repo history. Push blocked."
+  echo "   Fix it, or if this is a false positive, adjust .gitleaks.toml's allowlist."
+  echo "   Emergency bypass: git push --no-verify"
+  exit 1
+fi
+
+echo "✅ No secrets detected."

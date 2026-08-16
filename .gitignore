@@ -8,3 +8,6 @@
 !Caddyfile
 !.gitignore
 !.env.example
+!/.gitleaks.toml
+!/.githooks/
+!/.githooks/**

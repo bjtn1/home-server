@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Blocks commits that introduce secrets into staged changes.
+# Scans with gitleaks (via Docker) against the rules in .gitleaks.toml.
+#
+# Enable with: git config core.hooksPath .githooks
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+echo "🔍 Scanning staged changes for secrets (gitleaks)..."
+
+if ! docker run --rm -v "$repo_root:/repo:ro" zricethezav/gitleaks:latest \
+  protect --staged --redact --source /repo --config /repo/.gitleaks.toml -v; then
+  echo
+  echo "❌ gitleaks found a potential secret in your staged changes. Commit blocked."
+  echo "   Fix it, or if this is a false positive, adjust .gitleaks.toml's allowlist."
+  echo "   Emergency bypass: git commit --no-verify"
+  exit 1
+fi
+
+echo "✅ No secrets detected."

@@ -1,0 +1,19 @@
+[extend]
+useDefault = true
+
+# Default gitleaks rules mostly key off entropy, which misses short,
+# dictionary-like passwords assigned to *password*-style keys (e.g.
+# FTLCONF_webserver_api_password: 'hunter2'). This rule flags any
+# non-empty, non-variable-reference value assigned to such a key,
+# regardless of entropy.
+[[rules]]
+id = "hardcoded-password-value"
+description = "Hardcoded value assigned to a password-like variable"
+regex = '''(?i)pass(?:wd|word)?[\w.-]{0,20}[\s'"]{0,3}(?:=|:|=>)[\s'"]{0,5}([^\s'"$<][\w!@#$%^&*()+=./-]{4,100})'''
+keywords = ["passwd", "password", "pass"]
+
+[allowlist]
+regexes = [
+  # SSH public keys are meant to be shared, not secret.
+  '''ssh-(ed25519|rsa) [A-Za-z0-9+/]+={0,3}''',
+]

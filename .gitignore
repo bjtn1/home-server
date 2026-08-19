@@ -13,6 +13,8 @@
 !redis.conf
 # scrutiny's per-device smartctl overrides (plain, no secrets)
 !collector.yaml
+# samba's macOS-compat override (plain, no secrets)
+!smb.conf
 !/.gitleaks.toml
 !/.gitleaks-baseline.json
 !/.githooks/

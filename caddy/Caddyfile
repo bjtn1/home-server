@@ -1,9 +1,3 @@
-# global options -- admin API opened up (network-internal only, nothing
-# published to the host) so CaddyManager can reach it at caddy:2019
-{
-  admin 0.0.0.0:2019
-}
-
 # this is the DNS stuff we need for every entry
 
 (porkbun_tls) {

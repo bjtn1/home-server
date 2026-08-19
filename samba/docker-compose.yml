@@ -13,4 +13,6 @@ services:
     volumes:
       #- ./samba:/storage
       - /mnt:/storage
+      # overrides fruit:metadata to netatalk mode -- see comment in the file
+      - ./smb.conf:/etc/samba/smb.conf:ro
     restart: unless-stopped

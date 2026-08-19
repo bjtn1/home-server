@@ -250,8 +250,3 @@ scrutiny.bjtn.xyz {
   reverse_proxy scrutiny-web:8080
 }
 
-jdownloader2.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy jdownloader2:5800
-}
-

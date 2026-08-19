@@ -262,8 +262,8 @@ romm.bjtn.xyz {
   reverse_proxy romm:8080
 }
 
-pyload.bjtn.xyz {
+jdownloader2.bjtn.xyz {
   import porkbun_tls
-  reverse_proxy pyload-ng:8000
+  reverse_proxy jdownloader2:5800
 }
 

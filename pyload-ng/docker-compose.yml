@@ -1,0 +1,25 @@
+# Free download manager (link decryption, container/premium hoster support).
+# https://hub.docker.com/r/linuxserver/pyload-ng
+#
+# Default login is pyload/pyload -- change it on first login.
+services:
+  pyload-ng:
+    image: lscr.io/linuxserver/pyload-ng:latest
+    container_name: pyload-ng
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./config:/config
+      - ${PYLOAD_DOWNLOADS_PATH}:/downloads
+    #ports:
+      #- 8000:8000
+      #- 9666:9666 # click'n'load, optional
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

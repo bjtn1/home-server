@@ -1,0 +1,48 @@
+# Self-hosted digital library for ebooks/comics (successor to BookLore).
+# https://github.com/grimmory-tools/grimmory
+services:
+  grimmory:
+    image: ghcr.io/grimmory-tools/grimmory:latest
+    container_name: grimmory
+    restart: unless-stopped
+    depends_on:
+      grimmory-db:
+        condition: service_healthy
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - DATABASE_URL=jdbc:mariadb://grimmory-db:3306/grimmory
+      - DATABASE_USERNAME=grimmory
+      - DATABASE_PASSWORD=${GRIMMORY_DB_PASSWORD}
+    volumes:
+      - ./data:/app/data
+      - ${GRIMMORY_BOOKS_PATH}:/books
+      - ./bookdrop:/bookdrop
+    networks:
+      - bjtn-proxy
+
+  grimmory-db:
+    image: lscr.io/linuxserver/mariadb:11.4.8
+    container_name: grimmory-db
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - MYSQL_DATABASE=grimmory
+      - MYSQL_USER=grimmory
+      - MYSQL_PASSWORD=${GRIMMORY_DB_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${GRIMMORY_DB_ROOT_PASSWORD}
+    volumes:
+      - ./db:/config
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-uroot", "-p${GRIMMORY_DB_ROOT_PASSWORD}"]
+      interval: 5s
+      retries: 10
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

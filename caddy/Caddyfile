@@ -1,3 +1,9 @@
+# global options -- admin API opened up (network-internal only, nothing
+# published to the host) so CaddyManager can reach it at caddy:2019
+{
+  admin 0.0.0.0:2019
+}
+
 # this is the DNS stuff we need for every entry
 
 (porkbun_tls) {
@@ -181,5 +187,88 @@ upsnap.bjtn.xyz {
 wol.bjtn.xyz {
   import porkbun_tls
   reverse_proxy 192.168.1.25:8091
+}
+
+########################################################
+################### NEW SERVICES ########################
+########################################################
+
+maintenant.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy maintenant:8080
+}
+
+notes.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy zennotes:7878
+}
+
+caddymanager.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy caddymanager-frontend:80
+}
+
+mindwtr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy mindwtr-app:5173
+}
+
+# mindwtr's self-hosted sync server, used from within the app/PWA settings
+mindwtr-api.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy mindwtr-cloud:8787
+}
+
+grimmory.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy grimmory:6060
+}
+
+journiv.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy journiv:8000
+}
+
+tracearr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy tracearr:3000
+}
+
+convert.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy convert:80
+}
+
+# atlas uses network_mode: host (needs raw sockets for scanning), so it's
+# reached via the host's LAN IP, same pattern as upsnap above
+atlas.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy 192.168.1.25:8888
+}
+
+cronmaster.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy cronmaster:3000
+}
+
+yourls.bjtn.xyz {
+  import porkbun_tls
+  redir / /admin/
+  reverse_proxy yourls:8080
+}
+
+wger.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy wger-nginx:80
+}
+
+romm.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy romm:8080
+}
+
+pyload.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy pyload-ng:8000
 }
 

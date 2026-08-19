@@ -1,0 +1,34 @@
+# Keyboard-first Markdown notes w/ Vim motions. https://github.com/ZenNotes/zennotes
+#
+# First boot: ZenNotes generates a bootstrap auth token and writes it to
+# ./data/auth-token if ZENNOTES_AUTH_TOKEN is left blank in .env. Grab it from
+# there (or the container logs) and paste it into .env for it to persist.
+services:
+  zennotes:
+    image: adibhanna/zennotes:latest
+    container_name: zennotes
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - ./vault:/workspace
+      - ./data:/data
+    environment:
+      - ZENNOTES_BIND=0.0.0.0:7878
+      - ZENNOTES_CONFIG_PATH=/data/server.json
+      - ZENNOTES_DEFAULT_VAULT_PATH=/workspace
+      - ZENNOTES_BROWSE_ROOTS=/workspace
+      - ZENNOTES_ALLOWED_ORIGINS=https://notes.bjtn.xyz
+      - ZENNOTES_AUTH_TOKEN=${ZENNOTES_AUTH_TOKEN}
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

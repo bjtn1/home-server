@@ -21,4 +21,7 @@ paths = [
   # Records already-accepted findings (e.g. old redaction placeholders);
   # it verbatim contains match text by design, not a live secret.
   '''\.gitleaks-baseline\.json$''',
+  # By convention these hold empty placeholders only (see .gitignore) --
+  # real values live in sibling .env files, which are never tracked.
+  '''\.env\.example$''',
 ]

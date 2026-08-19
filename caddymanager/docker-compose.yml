@@ -1,0 +1,37 @@
+# Web UI for managing Caddy2 servers via their admin API.
+# https://github.com/caddymanager/caddymanager (official)
+#
+# NOTE: this reaches out to our existing `caddy` container's admin API at
+# caddy:2019. Caddy's admin API binds to localhost inside its own container
+# by default, so it must be opened up network-wide -- see the global
+# `admin 0.0.0.0:2019` directive added at the top of ../caddy/Caddyfile.
+services:
+  caddymanager-backend:
+    image: caddymanager/caddymanager-backend:latest
+    container_name: caddymanager-backend
+    restart: unless-stopped
+    environment:
+      - DB_ENGINE=sqlite
+      - SQLITE_DB_PATH=/data/caddymanager.sqlite
+      - CORS_ORIGIN=https://caddymanager.bjtn.xyz
+      - JWT_SECRET=${CADDYMANAGER_JWT_SECRET}
+      - CADDY_SANDBOX_URL=http://caddy:2019
+    volumes:
+      - ./data:/data
+    networks:
+      - bjtn-proxy
+
+  caddymanager-frontend:
+    image: caddymanager/caddymanager-frontend:latest
+    container_name: caddymanager-frontend
+    restart: unless-stopped
+    depends_on:
+      - caddymanager-backend
+    environment:
+      - BACKEND_HOST=caddymanager-backend:3000
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

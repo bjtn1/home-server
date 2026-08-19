@@ -8,6 +8,9 @@
 !Caddyfile
 !.gitignore
 !.env.example
+# wger's nginx/redis config (plain, no secrets)
+!nginx.conf
+!redis.conf
 !/.gitleaks.toml
 !/.gitleaks-baseline.json
 !/.githooks/

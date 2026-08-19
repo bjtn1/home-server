@@ -1,0 +1,43 @@
+# Tautulli/Jellystat alternative -- unified stream monitoring for Plex,
+# Jellyfin, and Emby. https://github.com/connorgallopo/Tracearr
+#
+# Supervised all-in-one image (bundles TimescaleDB + Redis + app). Needs
+# bare metal / a real Docker host, not a nested container. Min. 3GB RAM.
+# Secrets are auto-generated on first run -- no .env needed.
+services:
+  tracearr:
+    image: ghcr.io/connorgallopo/tracearr:supervised
+    container_name: tracearr
+    restart: unless-stopped
+    shm_size: 512mb
+    mem_limit: 3g
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    environment:
+      - TZ=America/New_York
+      - LOG_LEVEL=info
+    volumes:
+      - tracearr_postgres:/data/postgres
+      - tracearr_redis:/data/redis
+      - tracearr_data:/data/tracearr
+      - tracearr_backups:/data/backup
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true
+
+volumes:
+  tracearr_postgres:
+  tracearr_redis:
+  tracearr_data:
+  tracearr_backups:

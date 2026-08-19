@@ -1,0 +1,20 @@
+# Self-hosted private journaling app. https://github.com/journiv/journiv-app
+#
+# Using the single-container SQLite deployment (vs. their Postgres+Redis+Celery
+# "production" compose) since this is single-user -- plenty for a home server.
+services:
+  journiv:
+    image: swalabtech/journiv-app:latest
+    container_name: journiv
+    restart: unless-stopped
+    environment:
+      - SECRET_KEY=${JOURNIV_SECRET_KEY}
+      - DOMAIN_NAME=journiv.bjtn.xyz
+    volumes:
+      - ./data:/data
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

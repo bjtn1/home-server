@@ -10,6 +10,7 @@ services:
       - ./config:/config
       - ./data:/data
       - /mnt/games:/mnt/games
+      - /mnt/beige/alex-immich-backup:/mnt/beige/alex-immich-backup
     ports:
       - "22000:22000/tcp"
       - "22000:22000/udp"

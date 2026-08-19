@@ -148,6 +148,11 @@ immich.bjtn.xyz {
   reverse_proxy immich:2283
 }
 
+photos.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy immich:2283
+}
+
 beszel.bjtn.xyz {
   import porkbun_tls
   reverse_proxy beszel:8090
@@ -211,11 +216,6 @@ grimmory.bjtn.xyz {
 journiv.bjtn.xyz {
   import porkbun_tls
   reverse_proxy journiv:8000
-}
-
-cronmaster.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy cronmaster:3000
 }
 
 yourls.bjtn.xyz {

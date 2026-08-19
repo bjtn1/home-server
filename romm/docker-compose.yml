@@ -20,6 +20,11 @@ services:
       - SCREENSCRAPER_PASSWORD=${SCREENSCRAPER_PASSWORD}
       - RETROACHIEVEMENTS_API_KEY=${RETROACHIEVEMENTS_API_KEY}
       - STEAMGRIDDB_API_KEY=${STEAMGRIDDB_API_KEY}
+      # community-hosted match proxies + completion-time data, no account
+      # needed, just flags
+      - HASHEOUS_API_ENABLED=true
+      - PLAYMATCH_API_ENABLED=true
+      - HLTB_API_ENABLED=true
       - SCAN_WORKERS=2
       - WEB_SERVER_CONCURRENCY=3
     volumes:

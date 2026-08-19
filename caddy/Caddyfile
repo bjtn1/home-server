@@ -60,11 +60,12 @@ steamdeck.bjtn.xyz {
 
 # ayn thor syncthing GUI
 thor.bjtn.xyz {
-  import porkbun_tls 
-	reverse_proxy 100.83.201.58:8384 {
-    # we need this because otherwise we'll get a "host check error"
-		header_up Host {upstream_hostport}
-	}
+  import porkbun_tls
+  reverse_proxy https://100.83.201.58:8384 {
+    transport http {
+      tls_insecure_skip_verify
+    }
+  }
 }
 
 # music tablet's syncthing GUI

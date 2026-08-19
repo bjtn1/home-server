@@ -198,11 +198,6 @@ notes.bjtn.xyz {
   reverse_proxy zennotes:7878
 }
 
-caddymanager.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy caddymanager-frontend:80
-}
-
 mindwtr.bjtn.xyz {
   import porkbun_tls
   reverse_proxy mindwtr-app:5173
@@ -222,23 +217,6 @@ grimmory.bjtn.xyz {
 journiv.bjtn.xyz {
   import porkbun_tls
   reverse_proxy journiv:8000
-}
-
-tracearr.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy tracearr:3000
-}
-
-convert.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy convert:80
-}
-
-# atlas uses network_mode: host (needs raw sockets for scanning), so it's
-# reached via the host's LAN IP, same pattern as upsnap above
-atlas.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy 192.168.1.25:8888
 }
 
 cronmaster.bjtn.xyz {

@@ -1,0 +1,78 @@
+# S.M.A.R.T. disk health monitoring/alerting with a web dashboard.
+# https://github.com/AnalogJ/scrutiny
+#
+# NOT using lscr.io/linuxserver/scrutiny -- that all-in-one image panics
+# on startup ("failed to check influxdb setup status") because it never
+# actually configures the InfluxDB connection it needs; it's a known,
+# unresolved bug (linuxserver/docker-scrutiny#24, repo now archived).
+# Using upstream's official hub/spoke compose instead: separate influxdb
+# + web + collector containers.
+#
+# Devices: this host's USB SSD letters (sda-sdf) aren't guaranteed
+# stable across reboots -- revisit this list if a drive stops showing
+# up. Deliberately NOT including /dev/mmcblk0 (the Pi's boot SD card):
+# no reason to grant a monitoring container write access to live boot
+# media, and SD/eMMC doesn't expose standard SMART data anyway.
+services:
+  scrutiny-influxdb:
+    image: influxdb:2.8
+    container_name: scrutiny-influxdb
+    restart: unless-stopped
+    volumes:
+      - ./influxdb:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    networks:
+      - bjtn-proxy
+
+  scrutiny-web:
+    image: ghcr.io/analogj/scrutiny:latest-web
+    container_name: scrutiny-web
+    restart: unless-stopped
+    volumes:
+      - ./config:/opt/scrutiny/config
+    environment:
+      - SCRUTINY_WEB_INFLUXDB_HOST=scrutiny-influxdb
+    depends_on:
+      scrutiny-influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+    networks:
+      - bjtn-proxy
+
+  scrutiny-collector:
+    image: ghcr.io/analogj/scrutiny:latest-collector
+    container_name: scrutiny-collector
+    restart: unless-stopped
+    cap_add:
+      - SYS_RAWIO
+    volumes:
+      - /run/udev:/run/udev:ro
+    environment:
+      - COLLECTOR_API_ENDPOINT=http://scrutiny-web:8080
+      - COLLECTOR_HOST_ID=bjtnpi
+      - COLLECTOR_RUN_STARTUP=true
+    devices:
+      - /dev/sda
+      - /dev/sdb
+      - /dev/sdc
+      - /dev/sdd
+      - /dev/sde
+      - /dev/sdf
+    depends_on:
+      scrutiny-web:
+        condition: service_healthy
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

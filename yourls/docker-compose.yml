@@ -14,6 +14,14 @@ services:
       - YOURLS_SITE=https://yourls.bjtn.xyz
       - YOURLS_USER=${YOURLS_ADMIN_USER}
       - YOURLS_PASS=${YOURLS_ADMIN_PASSWORD}
+    volumes:
+      # Sleeky's admin dark-mode theme (https://github.com/Flynntes/Sleeky).
+      # ./plugins/ isn't tracked in git (this repo doesn't vendor third-party
+      # app code) -- to restore it on a fresh clone:
+      #   git clone --depth 1 https://github.com/Flynntes/Sleeky /tmp/sleeky
+      #   mkdir -p plugins && cp -r /tmp/sleeky/sleeky-backend plugins/
+      # Then activate once at Admin > Manage Plugins > "Sleeky Backend".
+      - ./plugins/sleeky-backend:/var/www/html/user/plugins/sleeky-backend
     networks:
       - bjtn-proxy
 

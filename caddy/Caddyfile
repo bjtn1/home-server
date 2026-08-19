@@ -224,6 +224,12 @@ yourls.bjtn.xyz {
   reverse_proxy yourls:8080
 }
 
+urls.bjtn.xyz {
+  import porkbun_tls
+  redir / /admin/
+  reverse_proxy yourls:8080
+}
+
 wger.bjtn.xyz {
   import porkbun_tls
   reverse_proxy wger-nginx:80

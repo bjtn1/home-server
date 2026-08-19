@@ -2,6 +2,13 @@
 #
 # Simplified from upstream's compose (dropped PowerSync -- that's only for
 # offline-first mobile sync, not needed for a normal browser-based setup).
+#
+# IMPORTANT: on a fresh deploy, Docker auto-creates ./data/static and
+# ./data/media as root-owned, but wger-web runs as uid 1000 -- its startup
+# collectstatic step will fail with PermissionError and the site will load
+# with zero CSS/JS until you fix it:
+#   mkdir -p data/static data/media && chown -R 1000:1000 data/static data/media
+# then `docker compose restart wger-web` to rerun collectstatic.
 services:
   wger-db:
     image: postgres:15-alpine

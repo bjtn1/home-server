@@ -240,6 +240,11 @@ romm.bjtn.xyz {
   reverse_proxy romm:8080
 }
 
+roms.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy romm:8080
+}
+
 scrutiny.bjtn.xyz {
   import porkbun_tls
   reverse_proxy scrutiny-web:8080

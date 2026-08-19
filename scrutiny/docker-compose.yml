@@ -56,6 +56,7 @@ services:
       - SYS_RAWIO
     volumes:
       - /run/udev:/run/udev:ro
+      - ./config:/opt/scrutiny/config
     environment:
       - COLLECTOR_API_ENDPOINT=http://scrutiny-web:8080
       - COLLECTOR_HOST_ID=bjtnpi

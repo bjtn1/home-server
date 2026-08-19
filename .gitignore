@@ -11,6 +11,8 @@
 # wger's nginx/redis config (plain, no secrets)
 !nginx.conf
 !redis.conf
+# scrutiny's per-device smartctl overrides (plain, no secrets)
+!collector.yaml
 !/.gitleaks.toml
 !/.gitleaks-baseline.json
 !/.githooks/

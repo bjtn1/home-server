@@ -1,0 +1,12 @@
+version: 1
+host:
+  id: ""
+
+# /dev/sdc (Crucial X9, USB-NVMe bridge 0x0634:0x5606) isn't in
+# smartmontools' known-bridge database, so `smartctl --scan` silently
+# skips it entirely -- it never even shows up as "unknown", it's just
+# absent. Forcing the type here works: confirmed manually with
+# `smartctl --info -d sntasmedia /dev/sdc` (exit 0, correct model).
+devices:
+  - device: /dev/sdc
+    type: 'sntasmedia'

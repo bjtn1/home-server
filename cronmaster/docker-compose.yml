@@ -19,6 +19,10 @@ services:
       - DOCKER=true
       - HOST_CRONTAB_USER=root
       - AUTH_PASSWORD=${CRONMASTER_AUTH_PASSWORD}
+      # Without this it guesses its own origin as https://cronmaster:3000 --
+      # https on the container's plain-HTTP port -- and its server-side
+      # session check fetch fails with ERR_SSL_WRONG_VERSION_NUMBER.
+      - APP_URL=https://cronmaster.bjtn.xyz
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./scripts:/app/scripts

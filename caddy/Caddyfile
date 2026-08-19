@@ -193,11 +193,6 @@ wol.bjtn.xyz {
 ################### NEW SERVICES ########################
 ########################################################
 
-maintenant.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy maintenant:8080
-}
-
 notes.bjtn.xyz {
   import porkbun_tls
   reverse_proxy zennotes:7878

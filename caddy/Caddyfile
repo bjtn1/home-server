@@ -202,6 +202,11 @@ mindwtr.bjtn.xyz {
   reverse_proxy mindwtr-app:5173
 }
 
+todo.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy mindwtr-app:5173
+}
+
 # mindwtr's self-hosted sync server, used from within the app/PWA settings
 mindwtr-api.bjtn.xyz {
   import porkbun_tls
@@ -213,7 +218,17 @@ grimmory.bjtn.xyz {
   reverse_proxy grimmory:6060
 }
 
+library.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy grimmory:6060
+}
+
 journiv.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy journiv:8000
+}
+
+journal.bjtn.xyz {
   import porkbun_tls
   reverse_proxy journiv:8000
 }

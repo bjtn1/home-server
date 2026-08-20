@@ -229,11 +229,6 @@ urls.bjtn.xyz {
   reverse_proxy yourls:8080
 }
 
-wger.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy wger-nginx:80
-}
-
 romm.bjtn.xyz {
   import porkbun_tls
   reverse_proxy romm:8080

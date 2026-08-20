@@ -10,6 +10,12 @@ services:
     environment:
       - SECRET_KEY=${JOURNIV_SECRET_KEY}
       - DOMAIN_NAME=journiv.bjtn.xyz
+      # DOMAIN_NAME alone only trusts one hostname (Django ALLOWED_HOSTS-style
+      # check) -- journal.bjtn.xyz is a second alias for this same app, so it
+      # needs to be added via CORS_ORIGINS or it 400s with "Invalid host header".
+      - ENABLE_CORS=true
+      - CORS_ORIGINS=https://journiv.bjtn.xyz,https://journal.bjtn.xyz
+      - CORS_CREDENTIALS=true
     volumes:
       - ./data:/data
     networks:

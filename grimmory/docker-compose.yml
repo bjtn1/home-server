@@ -17,7 +17,7 @@ services:
       - DATABASE_PASSWORD=${GRIMMORY_DB_PASSWORD}
     volumes:
       - ./data:/app/data
-      - ${GRIMMORY_BOOKS_PATH}:/books
+      - ${GRIMMORY_BOOKS_PATH}:/books:ro
       - ./bookdrop:/bookdrop
     networks:
       - bjtn-proxy

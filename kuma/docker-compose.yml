@@ -1,0 +1,21 @@
+# Uptime monitoring/status dashboard w/ alerting. https://github.com/louislam/uptime-kuma
+#
+# NOTE: this only catches individual services going down while the Pi itself
+# stays up -- it can't alert on the whole box/network going offline, since
+# it dies right along with everything else in that case. For that you'd
+# need an external checker outside this network. Also needs a real
+# notification channel configured (Discord/ntfy/email/etc.) in its own UI
+# to actually be useful -- a dashboard nobody's watching doesn't help.
+services:
+  kuma:
+    image: louislam/uptime-kuma:1
+    container_name: kuma
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

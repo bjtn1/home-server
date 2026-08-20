@@ -249,3 +249,8 @@ scrutiny.bjtn.xyz {
   reverse_proxy scrutiny-web:8080
 }
 
+kuma.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy kuma:3001
+}
+

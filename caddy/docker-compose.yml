@@ -11,7 +11,10 @@ services:
       - ./caddy_data:/data
       - ./caddy_config:/config
     networks:
-      - bjtn-proxy
+      bjtn-proxy:
+        # Pinned so other containers can reach Caddy at a stable address --
+        # see the extra_hosts comment in kuma/docker-compose.yml for why.
+        ipv4_address: 172.20.0.2
     restart: unless-stopped
     extra_hosts:
        - "host.docker.internal:host-gateway"

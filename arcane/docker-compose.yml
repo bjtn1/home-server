@@ -1,0 +1,25 @@
+# Self-hosted Docker management UI (Portainer alternative).
+# https://github.com/getarcaneapp/arcane
+services:
+  arcane:
+    image: ghcr.io/getarcaneapp/manager:latest
+    container_name: arcane
+    restart: unless-stopped
+    # Host cgroup namespace so Arcane can reliably detect its own container
+    # ID -- needed for self-upgrades.
+    cgroup: host
+    environment:
+      - APP_URL=https://arcane.bjtn.xyz
+      - PUID=1000
+      - PGID=1000
+      - ENCRYPTION_KEY=${ARCANE_ENCRYPTION_KEY}
+      - JWT_SECRET=${ARCANE_JWT_SECRET}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

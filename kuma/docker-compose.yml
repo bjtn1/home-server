@@ -20,6 +20,7 @@ services:
     # single-label names, not dotted FQDNs), so /etc/hosts entries
     # pointing straight at caddy's pinned IP instead.
     extra_hosts:
+      - "arcane.bjtn.xyz:172.20.0.2"
       - "bazarr.bjtn.xyz:172.20.0.2"
       - "beszel.bjtn.xyz:172.20.0.2"
       - "books.bjtn.xyz:172.20.0.2"

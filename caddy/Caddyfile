@@ -249,3 +249,8 @@ kuma.bjtn.xyz {
   reverse_proxy kuma:3001
 }
 
+arcane.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy arcane:3552
+}
+

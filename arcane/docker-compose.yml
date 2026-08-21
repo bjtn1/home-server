@@ -17,6 +17,17 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data
+      # Read access to every compose project's files -- Arcane's project-based
+      # updater resolves relative volume paths (e.g. ./data) against the
+      # compose file's location, and since it drives docker via the host's
+      # daemon (over docker.sock), that resolved path has to be valid on the
+      # HOST, not just inside this container. So the mount path must match
+      # the host path exactly (/home/bjtn/docker on both sides) -- remapping
+      # it (e.g. to /app/data/projects) would make Arcane compute host paths
+      # that don't exist. Read-only: doesn't meaningfully change Arcane's
+      # blast radius since docker.sock already grants root-equivalent host
+      # access, but there's no reason for it to write here.
+      - /home/bjtn/docker:/home/bjtn/docker:ro
     networks:
       - bjtn-proxy
 

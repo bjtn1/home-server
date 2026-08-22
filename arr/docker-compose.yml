@@ -165,6 +165,29 @@ services:
     networks:
       - bjtn-proxy
 
+  unpackerr:
+    image: golift/unpackerr
+    container_name: unpackerr
+    user: 1000:1000
+    environment:
+      - TZ=America/New_York
+      # Sonarr/Radarr integration -- extracts archives from completed
+      # downloads in their queues, matching how they see /downloads.
+      - UN_SONARR_0_URL=http://sonarr:8989
+      - UN_SONARR_0_API_KEY=${sonarr_api_key}
+      - UN_SONARR_0_PATHS_0=/downloads
+      - UN_RADARR_0_URL=http://radarr:7878
+      - UN_RADARR_0_API_KEY=${radarr_api_key}
+      - UN_RADARR_0_PATHS_0=/downloads
+      # Standalone folder-watch -- extracts anything jDownloader drops in
+      # its dedicated downloads subfolder, independent of the *arr queues.
+      - UN_FOLDER_0_PATH=/downloads/jdownloader
+    volumes:
+      - ${downloads}:/downloads
+    restart: unless-stopped
+    networks:
+      - bjtn-proxy
+
 networks:
   bjtn-proxy:
     external: true

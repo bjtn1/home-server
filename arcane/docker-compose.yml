@@ -14,6 +14,12 @@ services:
       - PGID=1000
       - ENCRYPTION_KEY=${ARCANE_ENCRYPTION_KEY}
       - JWT_SECRET=${ARCANE_JWT_SECRET}
+      # Where Arcane scans for adoptable compose projects -- has to match the
+      # mount path below exactly (it's a separate setting from the mount
+      # itself; the mount alone doesn't make Arcane look there). Only scans
+      # one level deep, which fits this repo's flat <service>/docker-compose.yml
+      # layout.
+      - PROJECTS_DIRECTORY=/home/bjtn/docker
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data

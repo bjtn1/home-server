@@ -11,6 +11,9 @@ services:
       - USER_ID=1000
       - GROUP_ID=1000
       - TZ=America/New_York
+      - MYJDOWNLOADER_EMAIL=${MYJDOWNLOADER_EMAIL}
+      - MYJDOWNLOADER_PASSWORD=${MYJDOWNLOADER_PASSWORD}
+      - MYJDOWNLOADER_DEVICE_NAME=${MYJDOWNLOADER_DEVICE_NAME}
     volumes:
       - ./config:/config
       - ${JDOWNLOADER_DOWNLOADS_PATH}:/output

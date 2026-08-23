@@ -37,6 +37,7 @@ services:
       - "library.bjtn.xyz:172.20.0.2"
       - "logs.bjtn.xyz:172.20.0.2"
       - "notes.bjtn.xyz:172.20.0.2"
+      - "nzb.bjtn.xyz:172.20.0.2"
       - "photos.bjtn.xyz:172.20.0.2"
       - "pi.bjtn.xyz:172.20.0.2"
       - "pihole.bjtn.xyz:172.20.0.2"

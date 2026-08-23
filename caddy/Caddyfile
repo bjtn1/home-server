@@ -139,6 +139,11 @@ qbit.bjtn.xyz {
   reverse_proxy gluetun:8181
 }
 
+nzb.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy gluetun:8080
+}
+
 cleanuparr.bjtn.xyz {
   import porkbun_tls
   reverse_proxy cleanuparr:11011

@@ -188,6 +188,20 @@ services:
     networks:
       - bjtn-proxy
 
+  cleanuparr:
+    image: ghcr.io/cleanuparr/cleanuparr:latest
+    container_name: cleanuparr
+    restart: unless-stopped
+    environment:
+      - PORT=11011
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./cleanuparr/config:/config
+    networks:
+      - bjtn-proxy
+
 networks:
   bjtn-proxy:
     external: true

@@ -1,3 +1,14 @@
+{
+  # HTTP/2 doesn't support the classic Upgrade: websocket mechanism (only
+  # RFC8441 Extended CONNECT, which most WebSocket client libraries -- e.g.
+  # the ntfy mobile app -- don't implement). Global HTTP/1.1-only avoids
+  # WebSocket connections silently failing on any self-hosted app. No real
+  # downside on a lightly-trafficked homelab.
+  servers {
+    protocols h1
+  }
+}
+
 # this is the DNS stuff we need for every entry
 
 (porkbun_tls) {

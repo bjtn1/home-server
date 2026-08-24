@@ -1,0 +1,46 @@
+# ROM acquisition -- the arr-stack-shaped piece RomM itself doesn't do.
+# Searches via Prowlarr, grabs the best release, verifies it against
+# No-Intro/Redump DAT checksums, files it into romm's library.
+# https://github.com/BlizzHacker/romarr
+services:
+  romarr:
+    image: ghcr.io/blizzhacker/romarr:latest
+    container_name: romarr
+    restart: unless-stopped
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: America/New_York
+
+      # claims the install non-interactively -- no unclaimed setup window.
+      ROMARR_PASSWORD: ${ROMARR_PASSWORD:?set in .env}
+
+      PROWLARR_URL: http://prowlarr:9696
+      PROWLARR_API_KEY: ${PROWLARR_API_KEY:?set in .env}
+
+      # dedicated non-admin romm account -- see romarr.md memory for status
+      LIBRARY_KIND: romm
+      LIBRARY_URL: http://romm:8080
+      LIBRARY_USERNAME: romarr
+      LIBRARY_PASSWORD: ${LIBRARY_PASSWORD:-}
+      LIBRARY_PATH: /roms
+
+      QBITTORRENT_URL: http://gluetun:8181
+      QBITTORRENT_USER: ${QBITTORRENT_USER:?set in .env}
+      QBITTORRENT_PASS: ${QBITTORRENT_PASS:?set in .env}
+      QBITTORRENT_CATEGORY: romarr
+
+      LOG_LEVEL: INFO
+    volumes:
+      - ./config:/config
+      # romm's actual library root (ROMM_LIBRARY_PATH/roms) -- writing here
+      # directly means romm's own scan picks these up with no extra hop.
+      - ${ROMARR_ROMS}:/roms
+      # same host dir qbittorrent already mounts for emu-category downloads.
+      - ${ROMARR_DOWNLOADS}:/downloads
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

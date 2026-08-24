@@ -285,3 +285,13 @@ jdownloader2.bjtn.xyz {
   reverse_proxy jdownloader2:5800
 }
 
+questarr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy questarr:5000
+}
+
+romarr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy romarr:6868
+}
+

@@ -8,10 +8,24 @@
 # Using upstream's official hub/spoke compose instead: separate influxdb
 # + web + collector containers.
 #
-# Devices: this host's USB SSD letters (sda-sdf) aren't guaranteed
-# stable across reboots -- revisit this list if a drive stops showing
-# up. Deliberately NOT including /dev/mmcblk0 (the Pi's boot SD card):
-# no reason to grant a monitoring container write access to live boot
+# Devices: mapped by /dev/disk/by-id/ (USB vendor+model+serial), NOT
+# by kernel-assigned /dev/sdX letter -- those letters reshuffle any
+# time a drive drops out or reconnects late (confirmed the hard way,
+# see [[media-drive-incident]] incident #3: one drive going missing
+# shifted the rest from sda-sdf down to sda-sde, and the old hardcoded
+# /dev/sdf entry here broke the whole container even though 5 of the
+# 6 drives were perfectly healthy). Each entry maps its stable by-id
+# host path to a fixed container-internal /dev/sdX name so the
+# collector's own smartctl scan still finds a normal-looking device
+# list inside the container regardless of what the host currently
+# calls it. If a drive is genuinely disconnected, its by-id symlink
+# won't exist either and this container will still fail to start --
+# that's correct/wanted (better to notice a monitored drive is gone
+# than silently scan 5 of 6), just update the affected line rather
+# than the whole list if a drive is replaced.
+#
+# Deliberately NOT including /dev/mmcblk0 (the Pi's boot SD card): no
+# reason to grant a monitoring container write access to live boot
 # media, and SD/eMMC doesn't expose standard SMART data anyway.
 services:
   scrutiny-influxdb:
@@ -62,12 +76,24 @@ services:
       - COLLECTOR_HOST_ID=bjtnpi
       - COLLECTOR_RUN_STARTUP=true
     devices:
-      - /dev/sda
-      - /dev/sdb
-      - /dev/sdc
-      - /dev/sdd
-      - /dev/sde
-      - /dev/sdf
+      - source: /dev/disk/by-id/usb-Micron_CT4000X9SSD9_2535EA97271A-0:0
+        target: /dev/sda
+        permissions: rwm
+      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_S6XBNS0W524023N-0:0
+        target: /dev/sdb
+        permissions: rwm
+      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6NRNJ0WB14459D-0:0
+        target: /dev/sdc
+        permissions: rwm
+      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6SLNS0X707913K-0:0
+        target: /dev/sdd
+        permissions: rwm
+      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6SMNJ0W600392A-0:0
+        target: /dev/sde
+        permissions: rwm
+      - source: /dev/disk/by-id/usb-Samsung_PSSD_T9_S744NL0Y809472T-0:0
+        target: /dev/sdf
+        permissions: rwm
     depends_on:
       scrutiny-web:
         condition: service_healthy

@@ -149,6 +149,11 @@ cleanuparr.bjtn.xyz {
   reverse_proxy cleanuparr:11011
 }
 
+youtarr.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy youtarr:3011
+}
+
 ########################################################
 ################### OTHER ##############################
 ########################################################

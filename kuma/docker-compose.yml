@@ -53,6 +53,7 @@ services:
       - "shelfmark.bjtn.xyz:172.20.0.2"
       - "sonarr.bjtn.xyz:172.20.0.2"
       - "urls.bjtn.xyz:172.20.0.2"
+      - "youtarr.bjtn.xyz:172.20.0.2"
       - "yourls.bjtn.xyz:172.20.0.2"
     networks:
       - bjtn-proxy

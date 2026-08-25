@@ -111,6 +111,7 @@ services:
     volumes:
       - ./radarr/config:/config
       - ${movies}:/movies
+      - ${movies_archive}:/movies-archive
       - ${downloads}:/downloads
     #ports:
       #- 7878:7878
@@ -214,6 +215,112 @@ services:
       - TZ=America/New_York
     volumes:
       - ./cleanuparr/config:/config
+    networks:
+      - bjtn-proxy
+
+  # *Arr-inspired game manager/downloader (PC + console releases, not ROMs --
+  # see romarr for that). https://github.com/Doezer/Questarr
+  questarr:
+    image: ghcr.io/doezer/questarr:latest
+    container_name: questarr
+    restart: unless-stopped
+    environment:
+      - PORT=5000
+      - JWT_SECRET=${JWT_SECRET}
+      - CREDENTIALS_ENCRYPTION_KEY=${CREDENTIALS_ENCRYPTION_KEY}
+      - IGDB_CLIENT_ID=${IGDB_CLIENT_ID}
+      - IGDB_CLIENT_SECRET=${IGDB_CLIENT_SECRET}
+    volumes:
+      - ../questarr/data:/app/data
+      - ${GAMES_DIR}:/data/games
+    networks:
+      - bjtn-proxy
+
+  # ROM acquisition -- the arr-stack-shaped piece RomM itself doesn't do.
+  # Searches via Prowlarr, grabs the best release, verifies it against
+  # No-Intro/Redump DAT checksums, files it into romm's library.
+  # https://github.com/BlizzHacker/romarr
+  romarr:
+    image: ghcr.io/blizzhacker/romarr:latest
+    container_name: romarr
+    restart: unless-stopped
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: America/New_York
+      ROMARR_PASSWORD: ${ROMARR_PASSWORD:?set in .env}
+      PROWLARR_URL: http://prowlarr:9696
+      PROWLARR_API_KEY: ${PROWLARR_API_KEY:?set in .env}
+      LIBRARY_KIND: romm
+      LIBRARY_URL: http://romm:8080
+      LIBRARY_USERNAME: romarr
+      LIBRARY_PASSWORD: ${LIBRARY_PASSWORD:-}
+      LIBRARY_PATH: /roms
+      QBITTORRENT_URL: http://gluetun:8181
+      QBITTORRENT_USER: ${QBITTORRENT_USER:?set in .env}
+      QBITTORRENT_PASS: ${QBITTORRENT_PASS:?set in .env}
+      QBITTORRENT_CATEGORY: romarr
+      LOG_LEVEL: INFO
+    volumes:
+      - ../romarr/config:/config
+      - ${ROMARR_ROMS}:/roms
+      - ${ROMARR_DOWNLOADS}:/downloads
+    networks:
+      - bjtn-proxy
+
+  # Self-hosted ROM manager + browser player (EmulatorJS). https://github.com/rommapp/romm
+  romm:
+    image: rommapp/romm:latest
+    container_name: romm
+    restart: unless-stopped
+    depends_on:
+      romm-db:
+        condition: service_healthy
+        restart: true
+    environment:
+      - DB_HOST=romm-db
+      - DB_NAME=romm
+      - DB_USER=romm-user
+      - DB_PASSWD=${ROMM_DB_PASSWORD}
+      - ROMM_AUTH_SECRET_KEY=${ROMM_AUTH_SECRET_KEY}
+      - IGDB_CLIENT_ID=${IGDB_CLIENT_ID}
+      - IGDB_CLIENT_SECRET=${IGDB_CLIENT_SECRET}
+      - SCREENSCRAPER_USER=${SCREENSCRAPER_USER}
+      - SCREENSCRAPER_PASSWORD=${SCREENSCRAPER_PASSWORD}
+      - RETROACHIEVEMENTS_API_KEY=${RETROACHIEVEMENTS_API_KEY}
+      - STEAMGRIDDB_API_KEY=${STEAMGRIDDB_API_KEY}
+      - HASHEOUS_API_ENABLED=true
+      - PLAYMATCH_API_ENABLED=true
+      - HLTB_API_ENABLED=true
+      - SCAN_WORKERS=2
+      - WEB_SERVER_CONCURRENCY=3
+    volumes:
+      - ../romm/resources:/romm/resources
+      - ../romm/redis-data:/redis-data
+      - ${ROMM_LIBRARY_PATH}:/romm/library
+      - ../romm/assets:/romm/assets
+      - ../romm/config:/romm/config
+    networks:
+      - bjtn-proxy
+
+  romm-db:
+    image: mariadb:latest
+    container_name: romm-db
+    restart: unless-stopped
+    environment:
+      - MARIADB_ROOT_PASSWORD=${ROMM_DB_ROOT_PASSWORD}
+      - MARIADB_DATABASE=romm
+      - MARIADB_USER=romm-user
+      - MARIADB_PASSWORD=${ROMM_DB_PASSWORD}
+    volumes:
+      - ../romm/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 30s
+      start_interval: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - bjtn-proxy
 

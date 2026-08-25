@@ -1,0 +1,26 @@
+# Real-time system monitor -- CPU/mem/disk/network/per-process breakdown plus
+# per-container Docker stats. Complements Beszel's historical trend dashboards
+# with live at-a-glance state (exactly what tonight's load/swap/Sonarr-CPU
+# investigation needed and had to piece together by hand via top/vmstat).
+# https://github.com/nicolargo/glances
+#
+# No native web-password (Glances' own --password flag is interactive-prompt
+# only and documented to fail in a detached/no-TTY container) -- auth is
+# handled at the Caddy layer instead via basicauth.
+services:
+  glances:
+    image: nicolargo/glances:latest
+    container_name: glances
+    restart: unless-stopped
+    pid: host
+    environment:
+      - GLANCES_OPT=-w
+      - TZ=America/New_York
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

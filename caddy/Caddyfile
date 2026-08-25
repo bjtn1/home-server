@@ -184,6 +184,14 @@ beszel.bjtn.xyz {
   reverse_proxy beszel:8090
 }
 
+glances.bjtn.xyz {
+  import porkbun_tls
+  basicauth {
+    bjtn $2a$14$4l8wXpIC5LsO2fT1ljZSK.IUod6aIpvI4XxuDaOTsRtot2CqTbHoK
+  }
+  reverse_proxy glances:61208
+}
+
 dozzle.bjtn.xyz {
   import porkbun_tls
   reverse_proxy dozzle:8080

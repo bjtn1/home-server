@@ -26,6 +26,7 @@ services:
       - "cleanuparr.bjtn.xyz:172.20.0.2"
       - "books.bjtn.xyz:172.20.0.2"
       - "dozzle.bjtn.xyz:172.20.0.2"
+      - "glances.bjtn.xyz:172.20.0.2"
       - "grimmory.bjtn.xyz:172.20.0.2"
       - "homarr.bjtn.xyz:172.20.0.2"
       - "home.bjtn.xyz:172.20.0.2"

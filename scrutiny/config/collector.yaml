@@ -10,3 +10,9 @@ host:
 devices:
   - device: /dev/sdc
     type: 'sntasmedia'
+  # /dev/sdf (Samsung T9) hit the same `smartctl --scan` silent-skip
+  # issue as sdc above, discovered 2026-08-25 when adding the 28TB
+  # drive -- confirmed via `smartctl --info -d sntasmedia /dev/sdf`
+  # (exit 0, correct model/serial), --scan just never lists it.
+  - device: /dev/sdf
+    type: 'sntasmedia'

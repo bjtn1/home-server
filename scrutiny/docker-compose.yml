@@ -94,6 +94,9 @@ services:
       - source: /dev/disk/by-id/usb-Samsung_PSSD_T9_S744NL0Y809472T-0:0
         target: /dev/sdf
         permissions: rwm
+      - source: /dev/disk/by-id/ata-ST28000NT000-4AB103_K1S1NP4L
+        target: /dev/sdg
+        permissions: rwm
     depends_on:
       scrutiny-web:
         condition: service_healthy

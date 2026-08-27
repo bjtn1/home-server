@@ -16,3 +16,11 @@ devices:
   # (exit 0, correct model/serial), --scan just never lists it.
   - device: /dev/sdf
     type: 'sntasmedia'
+  # /dev/sdh (12TB games drive, ST12000VN0008-3MH101) added 2026-08-27 --
+  # collector auto-detect guesses NVMe first and fails ("Read NVMe
+  # Identify Controller failed"), same class of bridge-detection miss as
+  # sdc/sdf above but the opposite direction (needs 'sat', not
+  # 'sntasmedia'). Confirmed via `smartctl --info -d sat /dev/sdh`
+  # (exit 0, correct model/serial).
+  - device: /dev/sdh
+    type: 'sat'

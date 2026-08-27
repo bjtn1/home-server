@@ -37,7 +37,12 @@ services:
     volumes:
       - ./qbittorrent/config:/config
       - ${downloads}:/downloads
-      - ${media}:/mnt/media
+      - ${tv}:/mnt/media/tv
+      - ${movies}:/mnt/media/movies
+      - ${books}:/mnt/media/books
+      - ${downloads}:/mnt/media/downloads
+      - ${youtube}:/mnt/media/youtube
+      - ${music_sheets}:/mnt/media/music-sheets
       - ${emu}:/mnt/emu
       - ${games}:/mnt/games
     restart: unless-stopped
@@ -127,7 +132,12 @@ services:
     volumes:
       - ./jellyfin/config:/config
       - ./jellyfin/cache:/cache
-      - ${media}:/media:ro
+      - ${tv}:/media/tv:ro
+      - ${movies}:/media/movies:ro
+      - ${books}:/media/books:ro
+      - ${downloads}:/media/downloads:ro
+      - ${youtube}:/media/youtube:ro
+      - ${music_sheets}:/media/music-sheets:ro
       - ${obs}:/obs:ro
     #ports:
       #- 8096:8096

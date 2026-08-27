@@ -16,6 +16,14 @@ keywords = ["passwd", "password", "pass"]
 regexes = [
   # SSH public keys are meant to be shared, not secret.
   '''ssh-(ed25519|rsa) [A-Za-z0-9+/]+={0,3}''',
+  # hardcoded-password-value's own "non-variable-reference" intent (see its
+  # comment above) only excludes shell-style $VAR/<VAR>, not two common
+  # Python shapes: a bare ALL_CAPS_NAME reference (e.g. `"password": QBIT_PASS`),
+  # or `os.environ["X"]` itself (e.g. `QBIT_PASS = os.environ["QBIT_PASS"]` --
+  # the rule's capture stops at the opening quote, so it grabs the literal
+  # text "os.environ[" as if THAT were the secret). Neither is a real secret.
+  '''^[A-Z_][A-Z0-9_]{2,40}$''',
+  '''^os\.environ$''',
 ]
 paths = [
   # Records already-accepted findings (e.g. old redaction placeholders);

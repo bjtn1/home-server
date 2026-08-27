@@ -1,0 +1,13 @@
+services:
+  downloads-control:
+    build: .
+    container_name: downloads-control
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

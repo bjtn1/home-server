@@ -192,6 +192,14 @@ glances.bjtn.xyz {
   reverse_proxy glances:61208
 }
 
+pause.bjtn.xyz {
+  import porkbun_tls
+  basicauth {
+    bjtn $2a$14$mgHXMM2EwK2qzefcvDsVOOIABq6wrPFb4hFyfZwNcKs1U2v0xc91m
+  }
+  reverse_proxy downloads-control:8765
+}
+
 dozzle.bjtn.xyz {
   import porkbun_tls
   reverse_proxy dozzle:8080
@@ -241,16 +249,6 @@ library.bjtn.xyz {
   reverse_proxy grimmory:6060
 }
 
-journiv.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy journiv:8000
-}
-
-journal.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy journiv:8000
-}
-
 yourls.bjtn.xyz {
   import porkbun_tls
   redir / /admin/
@@ -293,13 +291,12 @@ jdownloader2.bjtn.xyz {
   reverse_proxy jdownloader2:5800
 }
 
-questarr.bjtn.xyz {
+# Obsidian LiveSync's CouchDB backend. No basicauth wrapper here on purpose
+# -- CouchDB's own admin user IS the auth layer, and the LiveSync plugin
+# authenticates directly with those credentials; stacking a second proxy-
+# level auth would just complicate every device's setup for no real gain.
+notessync.bjtn.xyz {
   import porkbun_tls
-  reverse_proxy questarr:5000
-}
-
-romarr.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy romarr:6868
+  reverse_proxy couchdb:5984
 }
 

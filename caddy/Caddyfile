@@ -194,9 +194,6 @@ glances.bjtn.xyz {
 
 pause.bjtn.xyz {
   import porkbun_tls
-  basicauth {
-    bjtn $2a$14$mgHXMM2EwK2qzefcvDsVOOIABq6wrPFb4hFyfZwNcKs1U2v0xc91m
-  }
   reverse_proxy downloads-control:8765
 }
 

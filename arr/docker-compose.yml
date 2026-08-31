@@ -129,6 +129,11 @@ services:
     container_name: jellyfin
     environment:
       - TZ=America/New_York
+    # VAAPI hardware transcode passthrough (ThinkPad's UHD 620, Gen9.5) --
+    # still needs "Hardware acceleration: Intel QuickSync (VAAPI)" enabled
+    # manually in Jellyfin admin UI (Dashboard -> Playback) after startup.
+    devices:
+      - /dev/dri:/dev/dri
     volumes:
       - ./jellyfin/config:/config
       - ./jellyfin/cache:/cache

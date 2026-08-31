@@ -17,12 +17,14 @@ services:
     volumes:
       - ./config:/config
       - ${JDOWNLOADER_DOWNLOADS_PATH}:/output
-      - ${JDOWNLOADER_MEDIA_PATH}:/mnt/media
+      - ${JDOWNLOADER_TV_PATH}:/mnt/media/tv
+      - ${JDOWNLOADER_MOVIES_PATH}:/mnt/media/movies
+      - ${JDOWNLOADER_BOOKS_PATH}:/mnt/media/books
+      - ${JDOWNLOADER_YOUTUBE_PATH}:/mnt/media/youtube
+      - ${JDOWNLOADER_MUSIC_SHEETS_PATH}:/mnt/media/music-sheets
       - ${JDOWNLOADER_OBS_PATH}:/mnt/obs
       - ${JDOWNLOADER_EMU_PATH}:/mnt/emu
       - ${JDOWNLOADER_GAMES_PATH}:/mnt/games
-      - ${JDOWNLOADER_OTHER_PATH}:/mnt/other
-      - ${JDOWNLOADER_BEIGE_PATH}:/mnt/beige
     #ports:
       #- 5800:5800 # web GUI
       #- 5900:5900 # raw VNC, optional

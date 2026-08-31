@@ -186,9 +186,6 @@ beszel.bjtn.xyz {
 
 glances.bjtn.xyz {
   import porkbun_tls
-  basicauth {
-    bjtn $2a$14$4l8wXpIC5LsO2fT1ljZSK.IUod6aIpvI4XxuDaOTsRtot2CqTbHoK
-  }
   reverse_proxy glances:61208
 }
 
@@ -219,12 +216,12 @@ homarr.bjtn.xyz {
 
 upsnap.bjtn.xyz {
   import porkbun_tls
-  reverse_proxy 192.168.1.25:8091
+  reverse_proxy 192.168.1.194:8091
 }
 
 wol.bjtn.xyz {
   import porkbun_tls
-  reverse_proxy 192.168.1.25:8091
+  reverse_proxy 192.168.1.194:8091
 }
 
 ########################################################

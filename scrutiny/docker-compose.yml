@@ -73,32 +73,40 @@ services:
       - ./config:/opt/scrutiny/config
     environment:
       - COLLECTOR_API_ENDPOINT=http://scrutiny-web:8080
-      - COLLECTOR_HOST_ID=bjtnpi
+      - COLLECTOR_HOST_ID=bjtnthinkpad
       - COLLECTOR_RUN_STARTUP=true
     devices:
-      - source: /dev/disk/by-id/usb-Micron_CT4000X9SSD9_2535EA97271A-0:0
+      # ThinkPad's internal SATA SSD -- new addition, unlike the Pi's SD
+      # card this actually exposes real SMART data.
+      - source: /dev/disk/by-id/ata-SAMSUNG_MZNLN256HCHP-000L7_S20GNAAGB13265
         target: /dev/sda
-        permissions: rwm
-      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_S6XBNS0W524023N-0:0
-        target: /dev/sdb
-        permissions: rwm
-      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6NRNJ0WB14459D-0:0
-        target: /dev/sdc
-        permissions: rwm
-      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6SLNS0X707913K-0:0
-        target: /dev/sdd
-        permissions: rwm
-      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6SMNJ0W600392A-0:0
-        target: /dev/sde
-        permissions: rwm
-      - source: /dev/disk/by-id/usb-Samsung_PSSD_T9_S744NL0Y809472T-0:0
-        target: /dev/sdf
         permissions: rwm
       - source: /dev/disk/by-id/ata-ST28000NT000-4AB103_K1S1NP4L
         target: /dev/sdg
         permissions: rwm
       - source: /dev/disk/by-id/ata-ST12000VN0008-3MH101_ZZ30PC97
         target: /dev/sdh
+        permissions: rwm
+      # The other 6 drives from the Pi (5x Samsung PSSD, 1x Micron) --
+      # migrated over 2026-08-31, confirmed empty (already consolidated
+      # onto vault), kept mounted as spare capacity.
+      - source: /dev/disk/by-id/usb-Micron_CT4000X9SSD9_2535EA97271A-0:0
+        target: /dev/sdi
+        permissions: rwm
+      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_S6XBNS0W524023N-0:0
+        target: /dev/sdj
+        permissions: rwm
+      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6NRNJ0WB14459D-0:0
+        target: /dev/sdk
+        permissions: rwm
+      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6SLNS0X707913K-0:0
+        target: /dev/sdl
+        permissions: rwm
+      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6SMNJ0W600392A-0:0
+        target: /dev/sdm
+        permissions: rwm
+      - source: /dev/disk/by-id/usb-Samsung_PSSD_T9_S744NL0Y809472T-0:0
+        target: /dev/sdn
         permissions: rwm
     depends_on:
       scrutiny-web:

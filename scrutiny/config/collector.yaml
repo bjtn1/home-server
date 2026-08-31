@@ -2,25 +2,43 @@ version: 1
 host:
   id: ""
 
-# /dev/sdc (Crucial X9, USB-NVMe bridge 0x0634:0x5606) isn't in
-# smartmontools' known-bridge database, so `smartctl --scan` silently
-# skips it entirely -- it never even shows up as "unknown", it's just
-# absent. Forcing the type here works: confirmed manually with
-# `smartctl --info -d sntasmedia /dev/sdc` (exit 0, correct model).
+# These USB-NVMe bridge chips (Micron/Crucial X9, Samsung PSSD T7 Shield,
+# Samsung PSSD T9) aren't in smartmontools' known-bridge database, so
+# `smartctl --scan` / collector auto-detect silently skip or misdetect
+# them -- confirmed historically (on the Pi, before this migration) via
+# `smartctl --info -d sntasmedia /dev/sdX` (exit 0, correct model) for
+# each of these exact drives by serial number. The plain (non-Shield)
+# Samsung PSSD T7 auto-detects fine and needs no override.
+#
+# Device letters re-verified 2026-08-31 after migrating these 6 drives
+# from the Pi to the ThinkPad -- letters are NOT guaranteed stable
+# across reconnects/reboots since these use scsi-generic targets in the
+# scrutiny-collector device passthrough, not by-id; if SMART collection
+# starts failing again after a reboot, recheck `docker logs
+# scrutiny-collector` for which letter each serial landed on.
 devices:
-  - device: /dev/sdc
+  - device: /dev/sdi   # Micron CT4000X9SSD9, serial 2535EA97271A
     type: 'sntasmedia'
-  # /dev/sdf (Samsung T9) hit the same `smartctl --scan` silent-skip
-  # issue as sdc above, discovered 2026-08-25 when adding the 28TB
-  # drive -- confirmed via `smartctl --info -d sntasmedia /dev/sdf`
-  # (exit 0, correct model/serial), --scan just never lists it.
-  - device: /dev/sdf
+  - device: /dev/sdk   # Samsung PSSD T7 Shield, serial S6NRNJ0WB14459D
     type: 'sntasmedia'
-  # /dev/sdh (12TB games drive, ST12000VN0008-3MH101) added 2026-08-27 --
-  # collector auto-detect guesses NVMe first and fails ("Read NVMe
-  # Identify Controller failed"), same class of bridge-detection miss as
-  # sdc/sdf above but the opposite direction (needs 'sat', not
-  # 'sntasmedia'). Confirmed via `smartctl --info -d sat /dev/sdh`
-  # (exit 0, correct model/serial).
+  - device: /dev/sdl   # Samsung PSSD T7 Shield, serial S6SLNS0X707913K
+    type: 'sntasmedia'
+  - device: /dev/sdm   # Samsung PSSD T7 Shield, serial S6SMNJ0W600392A
+    type: 'sntasmedia'
+  - device: /dev/sdn   # Samsung PSSD T9, serial S744NL0Y809472T
+    type: 'sntasmedia'
+  # /dev/sdg (28TB vault drive, ST28000NT000-4AB103) -- collector was
+  # stuck sending `--device sntasmedia` (wrong, that's for USB-NVMe
+  # bridges) for this native SATA drive every run, silently failing
+  # ("exit status 2") and skipping vault's SMART data entirely. Source
+  # of the bad cached preference unclear; forcing 'sat' explicitly
+  # fixes it regardless. Confirmed via `smartctl --info -d sat /dev/sdg`
+  # (exit 0, correct model/serial) 2026-08-31.
+  - device: /dev/sdg
+    type: 'sat'
+  # /dev/sdh (12TB games drive, ST12000VN0008-3MH101) -- collector
+  # auto-detect guesses NVMe first and fails ("Read NVMe Identify
+  # Controller failed"), needs 'sat' explicitly. Confirmed via
+  # `smartctl --info -d sat /dev/sdh` (exit 0, correct model/serial).
   - device: /dev/sdh
     type: 'sat'

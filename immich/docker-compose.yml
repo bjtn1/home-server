@@ -52,6 +52,16 @@ services:
     # extends: # uncomment this section for hardware acceleration - see https://docs.immich.app/features/ml-hardware-acceleration
     #   file: hwaccel.ml.yml
     #   service: cpu # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference - use the `-wsl` version for WSL2 where applicable
+    # Tailscale rewrites the host's /etc/resolv.conf to its MagicDNS resolver
+    # (100.100.100.100), which only resolves from the host's own network
+    # namespace -- Docker's per-container embedded DNS (127.0.0.11) can't
+    # reach it from inside a bridge network, so any container doing runtime
+    # hostname lookups gets SERVFAIL/name-resolution failures (confirmed
+    # host-wide 2026-08-31, not immich-specific). Scoped fix here since this
+    # is the fallback ML backend and needs to actually download its model.
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
     volumes:
       - model-cache:/cache
     env_file:

@@ -42,8 +42,7 @@ pi.bjtn.xyz {
 ################### SYNCTHING ##########################
 ########################################################
 
-# raspberry pi syncthing GUI
-pi-sync.bjtn.xyz {
+syncthing.bjtn.xyz {
   import porkbun_tls
   reverse_proxy syncthing:8384 {
     # we need this because otherwise we'll get a "host check error"

@@ -13,13 +13,23 @@ services:
   immich-server:
     container_name: immich
     image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
-    # extends:
-    #   file: hwaccel.transcoding.yml
-    #   service: cpu # set to one of [nvenc, quicksync, rkmpp, vaapi, vaapi-wsl] for accelerated transcoding
+    # ThinkPad's UHD 620 (Gen9.5) does real hardware transcode via VAAPI --
+    # verified working during migration testing (7x realtime, ~5% CPU).
+    # Not "quicksync": Debian's ffmpeg ships without libmfx and the newer
+    # oneVPL runtime only supports Gen12+, so vaapi is the correct backend
+    # here even though this is Quick Sync hardware.
+    extends:
+      file: hwaccel.transcoding.yml
+      service: vaapi
     volumes:
       # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
       - ${UPLOAD_LOCATION}:/data
       - /etc/localtime:/etc/localtime:ro
+      # Existing deduplicated family photo/video collection, added as a
+      # read-only External Library (Administration -> External Libraries in
+      # the Immich UI) rather than the upload location -- these files stay
+      # organized as-is, Immich just indexes/thumbnails them in place.
+      - /mnt/vault/immich:/mnt/vault-immich:ro
     env_file:
       - .env
     ports:

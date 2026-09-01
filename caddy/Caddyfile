@@ -293,3 +293,16 @@ notessync.bjtn.xyz {
   reverse_proxy couchdb:5984
 }
 
+########################################################
+################### NEXTCLOUD ###########################
+########################################################
+
+# cloud/nc/nextcloud all serve the same instance -- NEXTCLOUD_TRUSTED_DOMAINS
+# in nextcloud/.env must list all three or Nextcloud rejects the request.
+cloud.bjtn.xyz, nc.bjtn.xyz, nextcloud.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy nextcloud:80 {
+    header_up X-Forwarded-Proto https
+  }
+}
+

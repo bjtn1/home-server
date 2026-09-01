@@ -1,0 +1,96 @@
+# Nextcloud -- self-hosted file sync/share. https://github.com/nextcloud/docker
+#
+# Layout:
+#  - nextcloud       app container (apache, serves the web UI/API)
+#  - nextcloud-cron   same image, runs cron.php every 5 min instead of relying
+#                      on AJAX cron (webcron/AJAX cron silently stop running
+#                      background jobs if nobody's browser is open to trigger
+#                      them -- see https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/background_jobs_configuration.html)
+#  - db                Postgres, officially recommended DB backend
+#  - redis             transactional file locking + caching (distributed
+#                      locking is required once you're not on SQLite/single
+#                      process, otherwise concurrent edits can corrupt files)
+#
+# First run: visit the site and complete the setup wizard, OR pass
+# NEXTCLOUD_ADMIN_USER/PASSWORD below to skip it non-interactively (image
+# does this automatically on first boot if both are set).
+
+services:
+  nextcloud:
+    image: nextcloud:apache
+    container_name: nextcloud
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_HOST_PASSWORD=${REDIS_PASSWORD}
+      - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER}
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
+      - NEXTCLOUD_TRUSTED_DOMAINS=${NEXTCLOUD_TRUSTED_DOMAINS}
+      # Caddy terminates TLS and proxies over plain HTTP -- without this,
+      # Nextcloud thinks every request is unencrypted HTTP and throws
+      # "Access through untrusted domain" / mixed-content warnings, or
+      # redirects itself into a loop.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES}
+      - OVERWRITEPROTOCOL=https
+    volumes:
+      - ./app:/var/www/html
+      # Do not edit the next line. If you want to change where user files are
+      # stored, edit NEXTCLOUD_DATA_DIR in .env instead.
+      - ${NEXTCLOUD_DATA_DIR}:/var/www/html/data
+    networks:
+      - bjtn-proxy
+
+  nextcloud-cron:
+    image: nextcloud:apache
+    container_name: nextcloud-cron
+    restart: unless-stopped
+    entrypoint: /cron.sh
+    depends_on:
+      - db
+      - redis
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_HOST_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./app:/var/www/html
+      - ${NEXTCLOUD_DATA_DIR}:/var/www/html/data
+    networks:
+      - bjtn-proxy
+
+  db:
+    image: postgres:16-alpine
+    container_name: nextcloud-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    networks:
+      - bjtn-proxy
+
+  redis:
+    image: redis:alpine
+    container_name: nextcloud-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - ./redis:/data
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

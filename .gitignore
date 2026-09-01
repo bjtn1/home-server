@@ -26,6 +26,7 @@
 !backup.sh
 !ssd-backup.sh
 !update-pi.sh
+!supernote-pdf-sync.sh
 !/.gitleaks.toml
 !/.gitleaks-baseline.json
 !/.githooks/

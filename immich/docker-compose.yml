@@ -25,11 +25,20 @@ services:
       # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
       - ${UPLOAD_LOCATION}:/data
       - /etc/localtime:/etc/localtime:ro
-      # Existing deduplicated family photo/video collection, added as a
-      # read-only External Library (Administration -> External Libraries in
-      # the Immich UI) rather than the upload location -- these files stay
+      # Existing deduplicated family photo/video collection, added as an
+      # External Library (Administration -> External Libraries in the
+      # Immich UI) rather than the upload location -- these files stay
       # organized as-is, Immich just indexes/thumbnails them in place.
-      - /mnt/vault/immich:/mnt/vault-immich:ro
+      # Mounted read-write (not :ro) so that emptying Immich's trash can
+      # actually unlink the underlying file for these assets too -- with
+      # :ro, Immich's delete job still runs but silently fails the unlink
+      # (EROFS, caught and only logged as a WARN in
+      # StorageService.handleDeleteFiles), so the DB row disappears while
+      # the file stays on disk and reappears on the next library scan.
+      # Tradeoff: Immich can now permanently delete real vault files, not
+      # just its own index, on trash-empty (still gated by the 30-day
+      # trash window for anything not force-deleted).
+      - /mnt/vault/immich:/mnt/vault-immich
     env_file:
       - .env
     ports:

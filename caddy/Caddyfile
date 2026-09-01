@@ -284,15 +284,6 @@ jdownloader2.bjtn.xyz {
   reverse_proxy jdownloader2:5800
 }
 
-# Obsidian LiveSync's CouchDB backend. No basicauth wrapper here on purpose
-# -- CouchDB's own admin user IS the auth layer, and the LiveSync plugin
-# authenticates directly with those credentials; stacking a second proxy-
-# level auth would just complicate every device's setup for no real gain.
-notessync.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy couchdb:5984
-}
-
 ########################################################
 ################### NEXTCLOUD ###########################
 ########################################################

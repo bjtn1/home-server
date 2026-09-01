@@ -24,6 +24,12 @@ regexes = [
   # text "os.environ[" as if THAT were the secret). Neither is a real secret.
   '''^[A-Z_][A-Z0-9_]{2,40}$''',
   '''^os\.environ$''',
+  # Bash `${VAR:-default}` parameter expansion (e.g.
+  # `${RESTIC_PASSWORD_FILE:-/home/bjtn/.restic-password}`): the rule's
+  # delimiter matches the `:` in `:-` instead of a real assignment, so the
+  # capture starts right after it -- always a literal `-` followed by the
+  # default value, never an actual secret.
+  '''^-\S+$''',
 ]
 paths = [
   # Records already-accepted findings (e.g. old redaction placeholders);

@@ -19,6 +19,13 @@
 # those live in its .env, already excluded by the default-deny rule above)
 !app.py
 !Dockerfile
+# bjtn's cron scripts, moved into docker/scripts/ 2026-09-01 for git
+# tracking (plain bash, no secrets -- passwords come from
+# RESTIC_PASSWORD_FILE/container env vars, not literals; verified clean
+# via gitleaks)
+!backup.sh
+!ssd-backup.sh
+!update-pi.sh
 !/.gitleaks.toml
 !/.gitleaks-baseline.json
 !/.githooks/

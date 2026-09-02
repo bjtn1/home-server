@@ -227,11 +227,6 @@ wol.bjtn.xyz {
 ################### NEW SERVICES ########################
 ########################################################
 
-notes.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy zennotes:7878
-}
-
 grimmory.bjtn.xyz {
   import porkbun_tls
   reverse_proxy grimmory:6060
@@ -272,6 +267,11 @@ scrutiny.bjtn.xyz {
 kuma.bjtn.xyz {
   import porkbun_tls
   reverse_proxy kuma:3001
+}
+
+ntfy.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy ntfy:80
 }
 
 arcane.bjtn.xyz {

@@ -1,0 +1,30 @@
+# Self-hosted push notifications. https://github.com/binwiederhier/ntfy
+#
+# Backing the disk-io-watchdog Kuma alert (2026-09-02): Kuma's "down" event
+# needs a real notification channel to actually reach a person -- this is
+# that channel. Subscribe to the topic from the phone app (or any browser)
+# at https://ntfy.bjtn.xyz/<topic>.
+#
+# No auth configured -- reachable only over the tailnet (same as every
+# other *.bjtn.xyz service; public DNS, Tailscale-only routing), so this
+# matches the access model everything else here already uses.
+services:
+  ntfy:
+    image: binwiederhier/ntfy
+    container_name: ntfy
+    command:
+      - serve
+    environment:
+      - TZ=America/New_York
+      - NTFY_BASE_URL=https://ntfy.bjtn.xyz
+      - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
+    volumes:
+      - ./data/cache:/var/cache/ntfy
+      - ./data/etc:/etc/ntfy
+    restart: unless-stopped
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

@@ -27,6 +27,16 @@
 !ssd-backup.sh
 !update-pi.sh
 !supernote-pdf-sync.sh
+# root/systemd-managed scripts, moved from /usr/local/bin + /etc into
+# docker/scripts/ 2026-09-02 for git tracking (plain bash/python + one
+# config file; the config's Kuma push URL is a semi-sensitive token, not
+# a real secret, and matches the same tolerance already accepted for the
+# push URLs embedded directly in backup.sh/ssd-backup.sh/etc above)
+!arr-cutoff-search.sh
+!sabnzbd-orphan-cleanup.py
+!disk-io-watchdog.sh
+!disk-io-watchdog-resolved.sh
+!disk-io-watchdog.conf
 !/.gitleaks.toml
 !/.gitleaks-baseline.json
 !/.githooks/

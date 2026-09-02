@@ -227,16 +227,6 @@ wol.bjtn.xyz {
 ################### NEW SERVICES ########################
 ########################################################
 
-grimmory.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy grimmory:6060
-}
-
-library.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy grimmory:6060
-}
-
 yourls.bjtn.xyz {
   import porkbun_tls
   redir / /admin/
@@ -277,11 +267,6 @@ ntfy.bjtn.xyz {
 arcane.bjtn.xyz {
   import porkbun_tls
   reverse_proxy arcane:3552
-}
-
-jdownloader2.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy jdownloader2:5800
 }
 
 ########################################################

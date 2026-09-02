@@ -39,6 +39,14 @@ services:
       # just its own index, on trash-empty (still gated by the 30-day
       # trash window for anything not force-deleted).
       - /mnt/vault/immich:/mnt/vault-immich
+      # OBS screen/gameplay recordings (314GB) -- previously "referenced"
+      # by a Jellyfin library pointing at a since-removed /obs mount that
+      # no longer exists anywhere on this host, so nothing was actually
+      # served. Added here as a second External Library instead. NOT
+      # currently covered by any restic backup (unlike vault-immich above,
+      # which immich-backup does cover) -- backup capacity for this one
+      # is still an open question as of 2026-09-02, deliberately deferred.
+      - /mnt/vault/obs:/mnt/vault-obs
     env_file:
       - .env
     ports:

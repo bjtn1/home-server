@@ -139,7 +139,6 @@ services:
       - ./jellyfin/cache:/cache
       - ${tv}:/media/tv:ro
       - ${movies}:/media/movies:ro
-      - ${books}:/media/books:ro
       - ${downloads}:/media/downloads:ro
       - ${youtube}:/media/youtube:ro
       - ${music_sheets}:/media/music-sheets:ro

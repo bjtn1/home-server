@@ -37,6 +37,10 @@
 !disk-io-watchdog.sh
 !disk-io-watchdog-resolved.sh
 !disk-io-watchdog.conf
+# Immich OBS-album membership sync, bjtn crontab (2026-09-02). API key is
+# NOT in this file -- passed inline via crontab's env prefix, same
+# treatment as the Sonarr/Radarr keys in arr-cutoff-search.sh's history.
+!obs-album-sync.py
 !/.gitleaks.toml
 !/.gitleaks-baseline.json
 !/.githooks/

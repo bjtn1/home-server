@@ -10,6 +10,7 @@ services:
       - ./config:/config
       - ./data:/data
       - /mnt/games:/mnt/games
+      - /mnt/vault/books:/mnt/books
     ports:
       - "22000:22000/tcp"
       - "22000:22000/udp"

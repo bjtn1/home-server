@@ -193,6 +193,11 @@ pause.bjtn.xyz {
   reverse_proxy downloads-control:8765
 }
 
+search.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy arr-control:8767
+}
+
 dozzle.bjtn.xyz {
   import porkbun_tls
   reverse_proxy dozzle:8080

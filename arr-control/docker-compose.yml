@@ -1,0 +1,13 @@
+services:
+  arr-control:
+    build: .
+    container_name: arr-control
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

@@ -15,8 +15,9 @@
 !collector.yaml
 # samba's macOS-compat override (plain, no secrets)
 !smb.conf
-# downloads-control's app source (plain Python + Dockerfile, no secrets --
-# those live in its .env, already excluded by the default-deny rule above)
+# downloads-control's and arr-control's app source (plain Python +
+# Dockerfile, no secrets -- those live in each app's .env, already
+# excluded by the default-deny rule above)
 !app.py
 !Dockerfile
 # bjtn's cron scripts, moved into docker/scripts/ 2026-09-01 for git

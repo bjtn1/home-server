@@ -45,6 +45,15 @@ PAGE = """<!doctype html>
   pre { font-size: 0.85rem; color: #ccc; text-align: left; max-width: 360px; width: 80vw;
         background: #1a1a1a; padding: 16px; border-radius: 12px; overflow-x: auto;
         white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow-y: auto; }
+  #barwrap { width: 80vw; max-width: 360px; height: 10px; background: #1a1a1a;
+             border-radius: 6px; overflow: hidden; }
+  /* Pause/resume resolve within one request -- there's no real fraction to
+     show, just a brief indeterminate sliding pulse while the request is
+     in flight (unlike the other four panels, which have a real total to
+     count against). */
+  #barfill { height: 100%; width: 40%; background: #2d7de0;
+             animation: slide 1s linear infinite; }
+  @keyframes slide { from { margin-left: -40%; } to { margin-left: 100%; } }
 </style>
 </head>
 <body>
@@ -55,6 +64,7 @@ PAGE = """<!doctype html>
   <div id="status">checking status...</div>
   <button id="pause" onclick="act('/pause')">⏸ Pause All Downloads</button>
   <button id="resume" onclick="act('/resume')">▶ Resume All Downloads</button>
+  <div id="barwrap" hidden><div id="barfill"></div></div>
   <h3>Console</h3>
   <pre id="log">loading...</pre>
 <script>
@@ -77,9 +87,11 @@ async function refreshLog() {
 }
 async function act(path) {
   document.getElementById('status').textContent = 'working...';
+  document.getElementById('barwrap').hidden = false;
   const r = await fetch(path, {method: 'POST'});
   const j = await r.json();
   document.getElementById('status').textContent = j.message;
+  document.getElementById('barwrap').hidden = true;
   refreshMeta();
   refreshLog();
 }

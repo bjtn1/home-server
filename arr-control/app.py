@@ -27,6 +27,7 @@ SONARR_KEY = os.environ["SONARR_KEY"]
 # the console log both survive container recreation, not just a restart.
 LAST_TRIGGERED_FILE = "/state/last-triggered.txt"
 CONSOLE_LOG = "/state/console.log"
+PROGRESS_FILE = "/state/progress.json"
 
 SEARCHES = [
     ("Radarr", RADARR_URL, RADARR_KEY, "MissingMoviesSearch"),
@@ -60,6 +61,10 @@ PAGE = """<!doctype html>
   pre { font-size: 0.85rem; color: #ccc; text-align: left; max-width: 420px; width: 80vw;
         background: #1a1a1a; padding: 16px; border-radius: 12px; overflow-x: auto;
         white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow-y: auto; }
+  #barwrap { width: 80vw; max-width: 420px; height: 10px; background: #1a1a1a;
+             border-radius: 6px; overflow: hidden; }
+  #barfill { height: 100%; width: 0%; background: #2d7de0; transition: width 0.4s ease; }
+  #barlabel { font-size: 0.8rem; color: #999; }
 </style>
 </head>
 <body>
@@ -71,6 +76,8 @@ PAGE = """<!doctype html>
     Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">🔍 Trigger Missing / Cutoff Searches</button>
   <div id="status">click the button to fire a search</div>
+  <div id="barwrap" hidden><div id="barfill"></div></div>
+  <div id="barlabel"></div>
   <h3>Console</h3>
   <pre id="log">loading...</pre>
 <script>
@@ -90,6 +97,18 @@ async function refreshLog() {
     document.getElementById('log').textContent = l || '(nothing yet)';
   } catch (e) { document.getElementById('log').textContent = 'error: ' + e; }
 }
+async function refreshProgress() {
+  const wrap = document.getElementById('barwrap');
+  const label = document.getElementById('barlabel');
+  try {
+    const j = await fetch('/progress').then(r => r.json());
+    if (!j.running && j.done === j.total) { wrap.hidden = true; label.textContent = ''; return; }
+    wrap.hidden = false;
+    const pct = j.total ? Math.round(100 * j.done / j.total) : 0;
+    document.getElementById('barfill').style.width = pct + '%';
+    label.textContent = `${j.done} of ${j.total} searches done`;
+  } catch (e) {}
+}
 async function go() {
   const btn = document.getElementById('go');
   const status = document.getElementById('status');
@@ -105,10 +124,13 @@ async function go() {
   btn.disabled = false;
   refreshMeta();
   refreshLog();
+  refreshProgress();
 }
 refreshMeta();
 refreshLog();
+refreshProgress();
 setInterval(refreshLog, 5000);
+setInterval(refreshProgress, 5000);
 </script>
 </body>
 </html>"""
@@ -133,13 +155,49 @@ def already_running(base, key, command):
 
 
 def trigger_one(name, base, key, command):
+    # Returns (label, tracked) -- tracked is {base, key, id} for /progress to
+    # poll if a new command was actually queued, or None if there's nothing
+    # new to wait on (already running, or the fire itself failed).
     if already_running(base, key, command):
-        return f"{name} ({command}): skipped, already running"
+        return f"{name} ({command}): skipped, already running", None
     try:
         result = api("POST", base, key, "/api/v3/command", {"name": command})
-        return f"{name} ({command}): {result.get('status', '?')}"
+        cid = result.get("id")
+        return f"{name} ({command}): {result.get('status', '?')}", (
+            {"base": base, "key": key, "id": cid} if cid is not None else None
+        )
     except Exception as e:
-        return f"{name} ({command}): FAILED - {e}"
+        return f"{name} ({command}): FAILED - {e}", None
+
+
+def record_progress(tracked):
+    try:
+        with open(PROGRESS_FILE, "w") as f:
+            json.dump({"total": len(SEARCHES), "tracked": tracked}, f)
+    except Exception:
+        pass
+
+
+def get_progress() -> dict:
+    try:
+        with open(PROGRESS_FILE) as f:
+            state = json.load(f)
+    except Exception:
+        return {"done": 0, "total": len(SEARCHES), "running": False}
+    total = state.get("total", len(SEARCHES))
+    tracked = state.get("tracked", [])
+    done = total - len(tracked)  # skipped/failed-to-fire entries already count as resolved
+    still_running = False
+    for t in tracked:
+        try:
+            c = api("GET", t["base"], t["key"], f"/api/v3/command/{t['id']}")
+            if c.get("status") in ("completed", "failed"):
+                done += 1
+            else:
+                still_running = True
+        except Exception:
+            done += 1  # can't tell anymore -- don't hang the bar on it forever
+    return {"done": min(done, total), "total": total, "running": still_running}
 
 
 def record_trigger():
@@ -204,6 +262,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+        elif self.path == "/progress":
+            self._json(get_progress())
         else:
             self.send_response(404)
             self.end_headers()
@@ -211,8 +271,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/trigger":
             record_trigger()
-            lines = [trigger_one(*s) for s in SEARCHES]
+            results = [trigger_one(*s) for s in SEARCHES]
+            lines = [r[0] for r in results]
+            tracked = [r[1] for r in results if r[1] is not None]
             append_log(lines)
+            record_progress(tracked)
             self._json({"lines": lines})
         else:
             self.send_response(404)

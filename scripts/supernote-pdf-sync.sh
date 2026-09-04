@@ -44,6 +44,11 @@ failed=0
 
 while IFS= read -r -d '' note; do
   pdf="${note%.note}.pdf"
+  # Logged before the up-to-date check too (not just real conversions) --
+  # this is also the per-file marker a progress bar counts against the
+  # total files found, so it needs to cover every file touched, not just
+  # ones that actually get (re)converted.
+  log "processing: $note"
   if [ -f "$pdf" ] && [ "$pdf" -nt "$note" ]; then
     skipped=$((skipped+1))
     continue

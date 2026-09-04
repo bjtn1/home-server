@@ -75,6 +75,10 @@ PAGE = """<!doctype html>
           box-sizing: border-box; }
   #info code { color: #9db8d8; }
   #lastrun { font-size: 0.8rem; color: #888; }
+  #barwrap { width: 90vw; max-width: 700px; height: 10px; background: #1a1a1a;
+             border-radius: 6px; overflow: hidden; }
+  #barfill { height: 100%; width: 0%; background: #2d7de0; transition: width 0.4s ease; }
+  #barlabel { font-size: 0.8rem; color: #999; }
 </style>
 </head>
 <body>
@@ -87,6 +91,8 @@ PAGE = """<!doctype html>
     Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">&#127464;&#127466; Run Castilian Queue</button>
   <button id="stop" onclick="stopAll()" style="background:#b03030;">&#9209; Stop Everything</button>
+  <div id="barwrap" hidden><div id="barfill"></div></div>
+  <div id="barlabel"></div>
   <button id="resumeall" onclick="resumeAll()" style="background:#3a8a4a;">&#9654; Resume All Stopped</button>
   <h3>Queue status</h3>
   <table id="queue"><thead><tr><th>ID</th><th>Status</th><th>Mode</th><th>Target</th><th>Note</th><th></th></tr></thead>
@@ -167,6 +173,21 @@ async function refresh() {
              `<td>${esc(row.mode)}</td><td>${esc(row.target)}</td><td>${esc(row.note)}</td>` +
              `<td>${resumeCell}</td></tr>`;
     }).join('');
+
+    const barwrap = document.getElementById('barwrap');
+    const barlabel = document.getElementById('barlabel');
+    const terminal = ['DONE', 'FAILED', 'STOPPED'];
+    const anyActive = rows.some(r => r.status === 'PENDING' || r.status === 'RUNNING');
+    if (rows.length === 0 || !anyActive) {
+      barwrap.hidden = true;
+      barlabel.textContent = '';
+    } else {
+      const done = rows.filter(r => terminal.includes(r.status)).length;
+      const pct = Math.round(100 * done / rows.length);
+      barwrap.hidden = false;
+      document.getElementById('barfill').style.width = pct + '%';
+      barlabel.textContent = `${done} of ${rows.length} jobs done`;
+    }
   } catch (e) {
     document.getElementById('queue-body').innerHTML =
       `<tr><td colspan="6">error: ${esc(e)}</td></tr>`;

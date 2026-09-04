@@ -28,6 +28,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SYNC_SCRIPT = "/home/bjtn/docker/scripts/supernote-pdf-sync.sh"
 LOG = "/home/bjtn/logs/supernote-pdf-sync.log"
 LAST_TRIGGERED_FILE = "/home/bjtn/logs/supernote-control-last-triggered.json"
+RUN_OFFSET_FILE = "/home/bjtn/logs/supernote-control-run-offset.txt"
+NOTES_DIR = "/mnt/vault/nextcloud/bjtn/files"
 
 PAGE = """<!doctype html>
 <html>
@@ -52,6 +54,10 @@ PAGE = """<!doctype html>
           box-sizing: border-box; }
   #info code { color: #9db8d8; }
   #lastrun { font-size: 0.8rem; color: #888; }
+  #barwrap { width: 80vw; max-width: 420px; height: 10px; background: #1a1a1a;
+             border-radius: 6px; overflow: hidden; }
+  #barfill { height: 100%; width: 0%; background: #2d7de0; transition: width 0.4s ease; }
+  #barlabel { font-size: 0.8rem; color: #999; }
 </style>
 </head>
 <body>
@@ -63,6 +69,8 @@ PAGE = """<!doctype html>
     button.<br>
     Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">📝 Convert Notes to PDF</button>
+  <div id="barwrap" hidden><div id="barfill"></div></div>
+  <div id="barlabel"></div>
   <h3>Console</h3>
   <pre id="log">loading...</pre>
 <script>
@@ -76,6 +84,20 @@ async function refreshMeta() {
     document.getElementById('lastrun').textContent = fmt(j.last_triggered);
   } catch (e) {}
 }
+async function refreshProgress() {
+  const wrap = document.getElementById('barwrap');
+  const label = document.getElementById('barlabel');
+  try {
+    const j = await fetch('/progress').then(r => r.json());
+    if (!j.running && j.done === 0) { wrap.hidden = true; label.textContent = ''; return; }
+    wrap.hidden = false;
+    const pct = j.total ? Math.round(100 * j.done / j.total) : 0;
+    document.getElementById('barfill').style.width = pct + '%';
+    label.textContent = j.running
+      ? `${j.done} of ${j.total} notes processed`
+      : `${j.done} of ${j.total} notes processed (finished)`;
+  } catch (e) {}
+}
 async function go() {
   const btn = document.getElementById('go');
   btn.disabled = true;
@@ -85,6 +107,7 @@ async function go() {
   setTimeout(() => { btn.disabled = false; }, 3000);
   refresh();
   refreshMeta();
+  refreshProgress();
 }
 async function refresh() {
   try {
@@ -94,7 +117,9 @@ async function refresh() {
 }
 refresh();
 refreshMeta();
+refreshProgress();
 setInterval(refresh, 5000);
+setInterval(refreshProgress, 5000);
 </script>
 </body>
 </html>"""
@@ -111,11 +136,59 @@ def tail_log(n=60) -> str:
         return f"error reading log: {e}"
 
 
+def count_total_notes() -> int:
+    try:
+        r = subprocess.run(["find", NOTES_DIR, "-type", "f", "-iname", "*.note"],
+                            capture_output=True, text=True, timeout=30)
+        return len([l for l in r.stdout.splitlines() if l.strip()])
+    except Exception:
+        return 0
+
+
 def start_run():
+    # Snapshot the log's current size and the total .note count now, so
+    # /progress can count only this run's per-file lines against the right
+    # total, not get confused by a previous run's lines still in the log.
+    try:
+        offset = os.path.getsize(LOG)
+    except FileNotFoundError:
+        offset = 0
+    try:
+        with open(RUN_OFFSET_FILE, "w") as f:
+            json.dump({"offset": offset, "total": count_total_notes()}, f)
+    except Exception:
+        pass
     subprocess.Popen([SYNC_SCRIPT], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                       stdin=subprocess.DEVNULL, start_new_session=True)
     # supernote-pdf-sync.sh writes its own log via `tee -a "$LOG"` already --
     # nothing more to capture here.
+
+
+def is_running() -> bool:
+    try:
+        r = subprocess.run(["pgrep", "-f", f"bash {SYNC_SCRIPT}"], capture_output=True, timeout=5)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def get_progress() -> dict:
+    try:
+        with open(RUN_OFFSET_FILE) as f:
+            state = json.load(f)
+        offset, total = state["offset"], state["total"]
+    except Exception:
+        offset, total = 0, 0
+    done = 0
+    try:
+        with open(LOG, "rb") as f:
+            f.seek(offset)
+            for line in f:
+                if b"processing: " in line:
+                    done += 1
+    except FileNotFoundError:
+        pass
+    return {"done": min(done, total) if total else done, "total": total, "running": is_running()}
 
 
 def record_trigger():
@@ -155,6 +228,13 @@ class Handler(BaseHTTPRequestHandler):
             self._text(tail_log())
         elif self.path == "/meta":
             data = json.dumps({"last_triggered": get_last_triggered()}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path == "/progress":
+            data = json.dumps(get_progress()).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))

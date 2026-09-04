@@ -26,6 +26,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 BACKUP_SCRIPT = "/home/bjtn/docker/scripts/ssd-backup.sh"
 LOG = "/home/bjtn/logs/ssd-backup.log"
 LAST_TRIGGERED_FILE = "/home/bjtn/logs/backup-control-last-triggered.json"
+RUN_OFFSET_FILE = "/home/bjtn/logs/backup-control-run-offset.txt"
+B0_ROOT = "/mnt/b2_4tb"
 
 PAGE = """<!doctype html>
 <html>
@@ -50,6 +52,10 @@ PAGE = """<!doctype html>
           box-sizing: border-box; }
   #info code { color: #9db8d8; }
   #lastrun { font-size: 0.8rem; color: #888; }
+  #barwrap { width: 80vw; max-width: 420px; height: 10px; background: #1a1a1a;
+             border-radius: 6px; overflow: hidden; }
+  #barfill { height: 100%; width: 0%; background: #2d7de0; transition: width 0.4s ease; }
+  #barlabel { font-size: 0.8rem; color: #999; }
 </style>
 </head>
 <body>
@@ -61,6 +67,8 @@ PAGE = """<!doctype html>
     this button.<br>
     Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">💾 Run SSD Backup</button>
+  <div id="barwrap" hidden><div id="barfill"></div></div>
+  <div id="barlabel"></div>
   <h3>Console</h3>
   <pre id="log">loading...</pre>
 <script>
@@ -80,6 +88,20 @@ async function refresh() {
     document.getElementById('log').textContent = l || '(nothing yet)';
   } catch (e) { document.getElementById('log').textContent = 'error: ' + e; }
 }
+async function refreshProgress() {
+  const wrap = document.getElementById('barwrap');
+  const label = document.getElementById('barlabel');
+  try {
+    const j = await fetch('/progress').then(r => r.json());
+    if (!j.running && j.done === 0) { wrap.hidden = true; label.textContent = ''; return; }
+    wrap.hidden = false;
+    const pct = j.total ? Math.round(100 * j.done / j.total) : 0;
+    document.getElementById('barfill').style.width = pct + '%';
+    label.textContent = j.running
+      ? `${j.done} of ${j.total} repos done`
+      : `${j.done} of ${j.total} repos done (finished)`;
+  } catch (e) {}
+}
 async function go() {
   const btn = document.getElementById('go');
   btn.disabled = true;
@@ -89,10 +111,13 @@ async function go() {
   setTimeout(() => { btn.disabled = false; }, 3000);
   refresh();
   refreshMeta();
+  refreshProgress();
 }
 refresh();
 refreshMeta();
+refreshProgress();
 setInterval(refresh, 5000);
+setInterval(refreshProgress, 5000);
 </script>
 </body>
 </html>"""
@@ -110,10 +135,59 @@ def tail_log(n=100) -> str:
 
 
 def start_run():
+    # Snapshot the log's current size first, so /progress can count only
+    # this run's "done: <repo>" lines, not ones from a previous run.
+    try:
+        offset = os.path.getsize(LOG)
+    except FileNotFoundError:
+        offset = 0
+    try:
+        with open(RUN_OFFSET_FILE, "w") as f:
+            f.write(str(offset))
+    except Exception:
+        pass
     subprocess.Popen([BACKUP_SCRIPT], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                       stdin=subprocess.DEVNULL, start_new_session=True)
     # ssd-backup.sh writes its own log via `tee`-equivalent `log()` already --
     # nothing more to capture here.
+
+
+def is_running() -> bool:
+    try:
+        r = subprocess.run(["pgrep", "-f", f"bash {BACKUP_SCRIPT}"], capture_output=True, timeout=5)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def count_total_repos() -> int:
+    # Same discovery ssd-backup.sh itself uses: any subdir of B0_ROOT with
+    # a restic "config" file in it.
+    try:
+        return sum(
+            1 for name in os.listdir(B0_ROOT)
+            if os.path.isfile(os.path.join(B0_ROOT, name, "config"))
+        )
+    except Exception:
+        return 0
+
+
+def get_progress() -> dict:
+    total = count_total_repos()
+    try:
+        offset = int(open(RUN_OFFSET_FILE).read().strip())
+    except Exception:
+        offset = 0
+    done = 0
+    try:
+        with open(LOG, "rb") as f:
+            f.seek(offset)
+            for line in f:
+                if b"] done: " in line:
+                    done += 1
+    except FileNotFoundError:
+        pass
+    return {"done": min(done, total) if total else done, "total": total, "running": is_running()}
 
 
 def record_trigger():
@@ -153,6 +227,13 @@ class Handler(BaseHTTPRequestHandler):
             self._text(tail_log())
         elif self.path == "/meta":
             data = json.dumps({"last_triggered": get_last_triggered()}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path == "/progress":
+            data = json.dumps(get_progress()).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))

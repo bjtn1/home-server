@@ -26,7 +26,11 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 QUEUE_SCRIPT = "/scripts/castilian-queue.sh"
-RUN_LOG = "/tmp/castilian-queue-run.log"
+# On /mnt/vault (already mounted, see docker-compose.yml), not /tmp -- was
+# ephemeral (lost on container recreation) until 2026-09-04, deferred at
+# the time so as not to kill an in-flight download by rebuilding.
+RUN_LOG = "/mnt/vault/mega-staging/queue/control-run.log"
+os.makedirs(os.path.dirname(RUN_LOG), exist_ok=True)
 RESUME_PATH_RE = re.compile(r"^/resume/(\d+)$")
 # On /mnt/vault (already mounted, see docker-compose.yml) so "last
 # triggered" survives container recreation, not just a restart.

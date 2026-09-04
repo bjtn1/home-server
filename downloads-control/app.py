@@ -18,9 +18,10 @@ QBIT_URL = os.environ["QBIT_URL"]  # e.g. http://gluetun:8181
 QBIT_USER = os.environ["QBIT_USER"]
 QBIT_PASS = os.environ["QBIT_PASS"]
 
-# /state is a bind mount (see docker-compose.yml) so "last triggered"
-# survives container recreation, not just a restart.
+# /state is a bind mount (see docker-compose.yml) so "last triggered" and
+# the console log both survive container recreation, not just a restart.
 LAST_TRIGGERED_FILE = "/state/last-triggered.json"
+CONSOLE_LOG = "/state/console.log"
 
 PAGE = """<!doctype html>
 <html>
@@ -40,6 +41,10 @@ PAGE = """<!doctype html>
   #info { font-size: 0.8rem; color: #777; text-align: left; max-width: 360px;
           background: #1a1a1a; padding: 12px 16px; border-radius: 10px; line-height: 1.5; }
   #lastrun { font-size: 0.8rem; color: #888; }
+  h3 { color: #999; font-weight: 500; margin: 12px 0 -8px; }
+  pre { font-size: 0.85rem; color: #ccc; text-align: left; max-width: 360px; width: 80vw;
+        background: #1a1a1a; padding: 16px; border-radius: 12px; overflow-x: auto;
+        white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow-y: auto; }
 </style>
 </head>
 <body>
@@ -50,6 +55,8 @@ PAGE = """<!doctype html>
   <div id="status">checking status...</div>
   <button id="pause" onclick="act('/pause')">⏸ Pause All Downloads</button>
   <button id="resume" onclick="act('/resume')">▶ Resume All Downloads</button>
+  <h3>Console</h3>
+  <pre id="log">loading...</pre>
 <script>
 function fmt(iso) {
   if (!iso) return 'never';
@@ -62,12 +69,19 @@ async function refreshMeta() {
       j.last_time ? fmt(j.last_time) + ' (' + j.last_action + ')' : 'never';
   } catch (e) {}
 }
+async function refreshLog() {
+  try {
+    const l = await fetch('/log').then(r => r.text());
+    document.getElementById('log').textContent = l || '(nothing yet)';
+  } catch (e) { document.getElementById('log').textContent = 'error: ' + e; }
+}
 async function act(path) {
   document.getElementById('status').textContent = 'working...';
   const r = await fetch(path, {method: 'POST'});
   const j = await r.json();
   document.getElementById('status').textContent = j.message;
   refreshMeta();
+  refreshLog();
 }
 async function refresh() {
   try {
@@ -80,7 +94,9 @@ async function refresh() {
 }
 refresh();
 refreshMeta();
+refreshLog();
 setInterval(refresh, 15000);
+setInterval(refreshLog, 5000);
 </script>
 </body>
 </html>"""
@@ -149,6 +165,25 @@ def get_last_triggered():
         return {}
 
 
+def append_log(action, message):
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(CONSOLE_LOG, "a") as f:
+            f.write(f"[{ts}] {action}: {message}\n")
+    except Exception:
+        pass  # best-effort -- never let this break the actual pause/resume
+
+
+def tail_log(n=200) -> str:
+    try:
+        with open(CONSOLE_LOG) as f:
+            return "".join(f.readlines()[-n:])
+    except FileNotFoundError:
+        return ""
+    except Exception as e:
+        return f"error reading log: {e}"
+
+
 class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode()
@@ -182,6 +217,13 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/meta":
             meta = get_last_triggered()
             self._json({"last_time": meta.get("time"), "last_action": meta.get("action")})
+        elif self.path == "/log":
+            data = tail_log().encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         else:
             self.send_response(404)
             self.end_headers()
@@ -199,6 +241,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 errors.append(f"qBittorrent: {e}")
             msg = "⏸ Paused" if not errors else "Partial failure: " + "; ".join(errors)
+            append_log("pause", msg)
             self._json({"message": msg})
         elif self.path == "/resume":
             record_trigger("resumed")
@@ -212,6 +255,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 errors.append(f"qBittorrent: {e}")
             msg = "▶ Resumed" if not errors else "Partial failure: " + "; ".join(errors)
+            append_log("resume", msg)
             self._json({"message": msg})
         else:
             self.send_response(404)

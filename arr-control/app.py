@@ -23,9 +23,10 @@ RADARR_KEY = os.environ["RADARR_KEY"]
 SONARR_URL = os.environ["SONARR_URL"]  # e.g. http://sonarr:8989
 SONARR_KEY = os.environ["SONARR_KEY"]
 
-# /state is a bind mount (see docker-compose.yml) so "last triggered" survives
-# container recreation, not just a restart.
+# /state is a bind mount (see docker-compose.yml) so "last triggered" and
+# the console log both survive container recreation, not just a restart.
 LAST_TRIGGERED_FILE = "/state/last-triggered.txt"
+CONSOLE_LOG = "/state/console.log"
 
 SEARCHES = [
     ("Radarr", RADARR_URL, RADARR_KEY, "MissingMoviesSearch"),
@@ -54,6 +55,11 @@ PAGE = """<!doctype html>
           background: #1a1a1a; padding: 12px 16px; border-radius: 10px; line-height: 1.5; }
   #info code { color: #9db8d8; }
   #lastrun { font-size: 0.8rem; color: #888; }
+  h3 { color: #999; font-weight: 500; margin: 12px 0 -8px; align-self: flex-start;
+       margin-left: calc(50% - 210px); }
+  pre { font-size: 0.85rem; color: #ccc; text-align: left; max-width: 420px; width: 80vw;
+        background: #1a1a1a; padding: 16px; border-radius: 12px; overflow-x: auto;
+        white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow-y: auto; }
 </style>
 </head>
 <body>
@@ -65,6 +71,8 @@ PAGE = """<!doctype html>
     Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">🔍 Trigger Missing / Cutoff Searches</button>
   <div id="status">click the button to fire a search</div>
+  <h3>Console</h3>
+  <pre id="log">loading...</pre>
 <script>
 function fmt(iso) {
   if (!iso) return 'never';
@@ -75,6 +83,12 @@ async function refreshMeta() {
     const j = await fetch('/meta').then(r => r.json());
     document.getElementById('lastrun').textContent = fmt(j.last_triggered);
   } catch (e) {}
+}
+async function refreshLog() {
+  try {
+    const l = await fetch('/log').then(r => r.text());
+    document.getElementById('log').textContent = l || '(nothing yet)';
+  } catch (e) { document.getElementById('log').textContent = 'error: ' + e; }
 }
 async function go() {
   const btn = document.getElementById('go');
@@ -90,8 +104,11 @@ async function go() {
   }
   btn.disabled = false;
   refreshMeta();
+  refreshLog();
 }
 refreshMeta();
+refreshLog();
+setInterval(refreshLog, 5000);
 </script>
 </body>
 </html>"""
@@ -141,6 +158,27 @@ def get_last_triggered():
         return None
 
 
+def append_log(lines):
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(CONSOLE_LOG, "a") as f:
+            f.write(f"----- {ts} -----\n")
+            for line in lines:
+                f.write(line + "\n")
+    except Exception:
+        pass  # best-effort -- never let this break the actual trigger
+
+
+def tail_log(n=200) -> str:
+    try:
+        with open(CONSOLE_LOG) as f:
+            return "".join(f.readlines()[-n:])
+    except FileNotFoundError:
+        return ""
+    except Exception as e:
+        return f"error reading log: {e}"
+
+
 class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode()
@@ -160,6 +198,13 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         elif self.path == "/meta":
             self._json({"last_triggered": get_last_triggered()})
+        elif self.path == "/log":
+            data = tail_log().encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         else:
             self.send_response(404)
             self.end_headers()
@@ -168,6 +213,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/trigger":
             record_trigger()
             lines = [trigger_one(*s) for s in SEARCHES]
+            append_log(lines)
             self._json({"lines": lines})
         else:
             self.send_response(404)

@@ -62,7 +62,7 @@ PAGE = """<!doctype html>
     nightly via cron regardless of this button.<br>
     Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">📝 Convert Notes to PDF</button>
-  <h3>Recent log</h3>
+  <h3>Console</h3>
   <pre id="log">loading...</pre>
 <script>
 function fmt(iso) {

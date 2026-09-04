@@ -102,7 +102,7 @@ def tail_log(n=100) -> str:
     try:
         with open(LOG) as f:
             lines = f.readlines()
-        return "".join(lines[-n:])
+        return "".join(reversed(lines[-n:]))  # newest first
     except FileNotFoundError:
         return ""
     except Exception as e:

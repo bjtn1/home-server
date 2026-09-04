@@ -206,7 +206,7 @@ def tail_log(n=60) -> str:
     try:
         with open(RUN_LOG) as f:
             lines = f.readlines()
-        return "".join(lines[-n:])
+        return "".join(reversed(lines[-n:]))  # newest first
     except FileNotFoundError:
         return ""
     except Exception as e:

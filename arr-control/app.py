@@ -171,7 +171,7 @@ def append_log(lines):
 def tail_log(n=200) -> str:
     try:
         with open(CONSOLE_LOG) as f:
-            return "".join(f.readlines()[-n:])
+            return "".join(reversed(f.readlines()[-n:]))  # newest first
     except FileNotFoundError:
         return ""
     except Exception as e:

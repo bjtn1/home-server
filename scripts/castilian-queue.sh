@@ -59,7 +59,7 @@ MEGA_LINK_RE='^https://mega\.nz/(folder|file)/'
 mkdir -p "$QUEUE_DIR"
 touch "$QUEUE_FILE"
 
-log() { echo "castilian-queue: $*" >&2; }
+log() { echo "[$(date '+%F %T')] castilian-queue: $*" >&2; }
 
 megadl_cfg() {
     if [[ -f "$MEGARC" ]]; then
@@ -283,7 +283,7 @@ cmd_run() {
         mkdir -p "$logdir"
         echo "$mux_out" > "$logdir/mux.log"
         local summary
-        summary=$(echo "$mux_out" | grep '^mux-castilian-audio: done:' | sed 's/^mux-castilian-audio: //')
+        summary=$(echo "$mux_out" | grep 'mux-castilian-audio: done:' | sed 's/^.*mux-castilian-audio: //')
         if [[ -z "$summary" ]]; then
             update_row "$id" "FAILED" "mux script errored, see job-$id/mux.log"
             log "job $id FAILED: mux script errored"

@@ -159,12 +159,11 @@ def get_last_triggered():
 
 
 def append_log(lines):
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         with open(CONSOLE_LOG, "a") as f:
-            f.write(f"----- {ts} -----\n")
             for line in lines:
-                f.write(line + "\n")
+                ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                f.write(f"[{ts}] {line}\n")
     except Exception:
         pass  # best-effort -- never let this break the actual trigger
 

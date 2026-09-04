@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Converts Supernote .note files (synced via WebDAV into Nextcloud's
-# lifelong-learning folder) to PDFs, in place, so they're readable without
-# manual export. Runs daily via bjtn's crontab.
+# Converts Supernote .note files to PDFs, in place, so they're readable
+# without manual export. Scans the whole of bjtn's Nextcloud "files" tree
+# recursively (not just one subfolder, since 2026-09-04 -- notes can land
+# in any synced folder, not only "lifelong-learning"). Runs daily via
+# bjtn's crontab.
 #
 # supernote_pdf itself refuses to overwrite an existing output file/dir
 # (non-destructive by design) -- so incremental behavior (skip unchanged,
@@ -23,7 +25,7 @@ LOCKFILE="/tmp/supernote-pdf-sync.lock"
 exec 9>"$LOCKFILE"
 flock -n 9 || { echo "supernote-pdf-sync: already running (lock held), exiting"; exit 0; }
 
-TARGET_DIR="/mnt/vault/nextcloud/bjtn/files/lifelong-learning"
+TARGET_DIR="/mnt/vault/nextcloud/bjtn/files"
 LOG="/home/bjtn/logs/supernote-pdf-sync.log"
 KUMA_PUSH_URL="https://kuma.bjtn.xyz/api/push/MIIQdecBCa"
 mkdir -p "$(dirname "$LOG")"
@@ -58,8 +60,8 @@ done < <(find "$TARGET_DIR" -type f -iname "*.note" -print0)
 log "done: $converted converted, $skipped already up to date, $failed failed"
 
 if [ "$converted" -gt 0 ]; then
-  log "rescanning lifelong-learning in Nextcloud so new PDFs show up"
-  docker exec -u www-data nextcloud php occ files:scan --path="bjtn/files/lifelong-learning" >>"$LOG" 2>&1
+  log "rescanning bjtn/files in Nextcloud so new PDFs show up"
+  docker exec -u www-data nextcloud php occ files:scan --path="bjtn/files" >>"$LOG" 2>&1
 fi
 
 if [ "$failed" -gt 0 ]; then

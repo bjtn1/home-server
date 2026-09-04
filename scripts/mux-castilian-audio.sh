@@ -73,7 +73,7 @@ for cmd in mkvmerge ffprobe jq; do
     command -v "$cmd" >/dev/null 2>&1 || { echo "mux-castilian-audio: missing required command: $cmd" >&2; exit 1; }
 done
 
-log() { echo "mux-castilian-audio: $*"; }
+log() { echo "[$(date '+%F %T')] mux-castilian-audio: $*"; }
 
 # Pull "S01E02" or "1x02" style markers out of a filename -> normalized "1-2"
 episode_key() {

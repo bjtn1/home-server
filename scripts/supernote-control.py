@@ -56,10 +56,11 @@ PAGE = """<!doctype html>
 </head>
 <body>
   <div id="info">Runs <code>supernote-pdf-sync.sh</code> -- converts any
-    Supernote <code>.note</code> file in Nextcloud's lifelong-learning
-    folder to PDF in place (skips ones already up to date), then rescans
-    that folder in Nextcloud so new PDFs show up immediately. Also runs
-    nightly via cron regardless of this button.<br>
+    Supernote <code>.note</code> file anywhere under bjtn's Nextcloud
+    files (scanned recursively, not just one folder) to PDF in place
+    (skips ones already up to date), then rescans Nextcloud so new PDFs
+    show up immediately. Also runs nightly via cron regardless of this
+    button.<br>
     Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">📝 Convert Notes to PDF</button>
   <h3>Console</h3>

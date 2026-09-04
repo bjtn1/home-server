@@ -65,7 +65,7 @@ for cmd in mkvmerge jq; do
     command -v "$cmd" >/dev/null 2>&1 || { echo "archive-castilian-audio: missing required command: $cmd" >&2; exit 1; }
 done
 
-log() { echo "archive-castilian-audio: $*"; }
+log() { echo "[$(date '+%F %T')] archive-castilian-audio: $*"; }
 
 DRY_RUN=0
 MOVIE_MODE=0

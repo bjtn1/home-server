@@ -213,6 +213,13 @@ note-to-pdf.bjtn.xyz {
   reverse_proxy host.docker.internal:8769
 }
 
+# backup-control also runs directly on the host, not containerized -- see
+# scripts/backup-control.py's header for why.
+backup.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy host.docker.internal:8770
+}
+
 dozzle.bjtn.xyz {
   import porkbun_tls
   reverse_proxy dozzle:8080

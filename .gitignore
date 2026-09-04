@@ -32,6 +32,11 @@
 # containerized) as a systemd --user service, since the sync script needs
 # real Docker daemon access (docker exec into nextcloud), 2026-09-04
 !supernote-control.py
+# Web-button trigger for ssd-backup.sh -- also runs on the host (not
+# containerized), reusing the host's broad /mnt/vault + /mnt/games +
+# backup-SSD access and already-configured restic install rather than
+# replicating all of that into a new container, 2026-09-04
+!backup-control.py
 # root/systemd-managed scripts, moved from /usr/local/bin + /etc into
 # docker/scripts/ 2026-09-02 for git tracking (plain bash/python + one
 # config file; the config's Kuma push URL is a semi-sensitive token, not

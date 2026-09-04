@@ -93,7 +93,7 @@ PAGE = """<!doctype html>
 <script>
 function fmt(iso) {
   if (!iso) return 'never';
-  return new Date(iso).toLocaleString();
+  return new Date(iso).toLocaleString(undefined, {hour12: false});
 }
 async function refreshMeta() {
   try {

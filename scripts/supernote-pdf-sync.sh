@@ -11,9 +11,17 @@
 # Nextcloud doesn't notice files written directly to disk (bypasses its own
 # app layer) -- occ files:scan at the end makes new/updated PDFs show up in
 # the web UI/apps without waiting for Nextcloud's own periodic scan.
+#
+# Flocked (2026-09-04, added alongside a manual-trigger web button) so a
+# button click can't overlap the nightly cron run -- a second invocation
+# just exits quietly rather than racing the first over the same PDFs.
 
 set -uo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+LOCKFILE="/tmp/supernote-pdf-sync.lock"
+exec 9>"$LOCKFILE"
+flock -n 9 || { echo "supernote-pdf-sync: already running (lock held), exiting"; exit 0; }
 
 TARGET_DIR="/mnt/vault/nextcloud/bjtn/files/lifelong-learning"
 LOG="/home/bjtn/logs/supernote-pdf-sync.log"

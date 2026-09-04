@@ -203,6 +203,16 @@ castilian.bjtn.xyz {
   reverse_proxy castilian-control:8768
 }
 
+# supernote-control runs directly on the host, not containerized -- it
+# needs real Docker daemon access (docker exec into nextcloud) that would
+# otherwise mean mounting the docker socket into a new container just for
+# this one button. host.docker.internal is already wired up for Caddy
+# (see caddy/docker-compose.yml's extra_hosts).
+note-to-pdf.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy host.docker.internal:8769
+}
+
 dozzle.bjtn.xyz {
   import porkbun_tls
   reverse_proxy dozzle:8080

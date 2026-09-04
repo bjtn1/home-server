@@ -28,6 +28,10 @@
 !ssd-backup.sh
 !update-pi.sh
 !supernote-pdf-sync.sh
+# Web-button trigger for supernote-pdf-sync.sh -- runs on the host (not
+# containerized) as a systemd --user service, since the sync script needs
+# real Docker daemon access (docker exec into nextcloud), 2026-09-04
+!supernote-control.py
 # root/systemd-managed scripts, moved from /usr/local/bin + /etc into
 # docker/scripts/ 2026-09-02 for git tracking (plain bash/python + one
 # config file; the config's Kuma push URL is a semi-sensitive token, not

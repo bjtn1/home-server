@@ -16,6 +16,7 @@ marks it STOPPED in the queue so self-heal won't quietly retry it, rather
 than waiting for the flock to naturally clear -- someone hitting Stop
 wants it to actually stop.
 """
+import datetime
 import json
 import os
 import re
@@ -27,6 +28,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 QUEUE_SCRIPT = "/scripts/castilian-queue.sh"
 RUN_LOG = "/tmp/castilian-queue-run.log"
 RESUME_PATH_RE = re.compile(r"^/resume/(\d+)$")
+# On /mnt/vault (already mounted, see docker-compose.yml) so "last
+# triggered" survives container recreation, not just a restart.
+LAST_TRIGGERED_FILE = "/mnt/vault/mega-staging/queue/.control-last-triggered"
 
 # Processes we're willing to stop on request. Matched by substring against
 # /proc/<pid>/cmdline rather than tracking a specific subprocess.Popen
@@ -62,9 +66,21 @@ PAGE = """<!doctype html>
   .resume-btn { font-size: 0.8rem; padding: 4px 12px; border-radius: 8px; width: auto;
                 background: #3a8a4a; }
   #empty { color: #666; font-size: 0.85rem; }
+  #info { font-size: 0.8rem; color: #777; text-align: left; max-width: 700px; width: 90vw;
+          background: #1a1a1a; padding: 12px 16px; border-radius: 10px; line-height: 1.5;
+          box-sizing: border-box; }
+  #info code { color: #9db8d8; }
+  #lastrun { font-size: 0.8rem; color: #888; }
 </style>
 </head>
 <body>
+  <div id="info">Runs <code>castilian-queue.sh</code> -- resolves queued
+    MEGA links or local sources, downloads/stages them, and hands them off
+    to <code>mux-castilian-audio.sh</code> to add the Castilian audio track
+    into the matching library file in place (video, existing audio, subs
+    untouched). Add jobs via the CLI (<code>castilian-queue.sh add</code>);
+    this page runs, stops, and resumes whatever's queued.<br>
+    Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">&#127464;&#127466; Run Castilian Queue</button>
   <button id="stop" onclick="stopAll()" style="background:#b03030;">&#9209; Stop Everything</button>
   <button id="resumeall" onclick="resumeAll()" style="background:#3a8a4a;">&#9654; Resume All Stopped</button>
@@ -75,6 +91,17 @@ PAGE = """<!doctype html>
   <h3>Recent log</h3>
   <pre id="log">loading...</pre>
 <script>
+function fmt(iso) {
+  if (!iso) return 'never';
+  return new Date(iso).toLocaleString();
+}
+async function refreshMeta() {
+  try {
+    const j = await fetch('/meta').then(r => r.json());
+    document.getElementById('lastrun').textContent =
+      j.last_time ? fmt(j.last_time) + ' (' + j.last_action + ')' : 'never';
+  } catch (e) {}
+}
 async function go() {
   const btn = document.getElementById('go');
   btn.disabled = true;
@@ -83,6 +110,7 @@ async function go() {
   } catch (e) {}
   setTimeout(() => { btn.disabled = false; }, 3000);
   refresh();
+  refreshMeta();
 }
 async function stopAll() {
   if (!confirm('Stop everything currently running? Jobs in progress will be marked STOPPED and will not auto-resume.')) return;
@@ -95,6 +123,7 @@ async function stopAll() {
   btn.disabled = false;
   btn.textContent = '⏹ Stop Everything';
   refresh();
+  refreshMeta();
 }
 async function resumeOne(id, btn) {
   btn.disabled = true;
@@ -103,6 +132,7 @@ async function resumeOne(id, btn) {
     await fetch('/resume/' + id, {method: 'POST'});
   } catch (e) {}
   refresh();
+  refreshMeta();
 }
 async function resumeAll() {
   if (!confirm('Resume every STOPPED job? This includes ones you may have stopped on purpose and left that way.')) return;
@@ -113,6 +143,7 @@ async function resumeAll() {
   } catch (e) {}
   setTimeout(() => { btn.disabled = false; }, 3000);
   refresh();
+  refreshMeta();
 }
 function esc(s) {
   return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -142,6 +173,7 @@ async function refresh() {
   } catch (e) { document.getElementById('log').textContent = 'error: ' + e; }
 }
 refresh();
+refreshMeta();
 setInterval(refresh, 5000);
 </script>
 </body>
@@ -256,6 +288,22 @@ def resume_all() -> str:
     return note or "resumed"
 
 
+def record_trigger(action):
+    try:
+        with open(LAST_TRIGGERED_FILE, "w") as f:
+            json.dump({"time": datetime.datetime.now(datetime.timezone.utc).isoformat(), "action": action}, f)
+    except Exception:
+        pass  # best-effort -- never let this break the actual action
+
+
+def get_last_triggered():
+    try:
+        with open(LAST_TRIGGERED_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _text(self, body: str, code=200):
         data = body.encode()
@@ -284,28 +332,40 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
         elif self.path == "/log":
             self._text(tail_log())
+        elif self.path == "/meta":
+            meta = get_last_triggered()
+            data = json.dumps({"last_time": meta.get("time"), "last_action": meta.get("action")}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         else:
             self.send_response(404)
             self.end_headers()
 
     def do_POST(self):
         if self.path == "/trigger":
+            record_trigger("run")
             try:
                 start_run()
                 self._text("started")
             except Exception as e:
                 self._text(f"failed to start: {e}", code=500)
         elif self.path == "/stop":
+            record_trigger("stop")
             try:
                 self._text(stop_all())
             except Exception as e:
                 self._text(f"failed to stop: {e}", code=500)
         elif self.path == "/resume-all":
+            record_trigger("resume-all")
             try:
                 self._text(resume_all())
             except Exception as e:
                 self._text(f"failed to resume: {e}", code=500)
         elif (m := RESUME_PATH_RE.match(self.path)):
+            record_trigger(f"resume job {m.group(1)}")
             try:
                 self._text(resume_job(m.group(1)))
             except Exception as e:

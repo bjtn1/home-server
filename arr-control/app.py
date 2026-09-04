@@ -15,12 +15,17 @@ top of one the timer (or a previous click) already queued.
 import json
 import urllib.request
 import os
+import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 RADARR_URL = os.environ["RADARR_URL"]  # e.g. http://radarr:7878
 RADARR_KEY = os.environ["RADARR_KEY"]
 SONARR_URL = os.environ["SONARR_URL"]  # e.g. http://sonarr:8989
 SONARR_KEY = os.environ["SONARR_KEY"]
+
+# /state is a bind mount (see docker-compose.yml) so "last triggered" survives
+# container recreation, not just a restart.
+LAST_TRIGGERED_FILE = "/state/last-triggered.txt"
 
 SEARCHES = [
     ("Radarr", RADARR_URL, RADARR_KEY, "MissingMoviesSearch"),
@@ -45,12 +50,32 @@ PAGE = """<!doctype html>
   button:disabled { background: #444; color: #999; cursor: default; }
   #status { font-size: 0.9rem; color: #999; min-height: 5em; text-align: left;
             white-space: pre-line; max-width: 420px; }
+  #info { font-size: 0.8rem; color: #777; text-align: left; max-width: 420px;
+          background: #1a1a1a; padding: 12px 16px; border-radius: 10px; line-height: 1.5; }
+  #info code { color: #9db8d8; }
+  #lastrun { font-size: 0.8rem; color: #888; }
 </style>
 </head>
 <body>
+  <div id="info">Fires the same Missing-content + Cutoff-Unmet searches that
+    <code>arr-cutoff-search.sh</code> already runs on its own 6h systemd timer
+    -- this is a manual supplement, not a replacement; the timer keeps
+    running regardless. Safe to click any time, skips any search already
+    in flight rather than stacking a duplicate.<br>
+    Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">🔍 Trigger Missing / Cutoff Searches</button>
-  <div id="status">Fires both Sonarr and Radarr missing-content + upgrade searches. Safe to click any time -- skips any search that's already running.</div>
+  <div id="status">click the button to fire a search</div>
 <script>
+function fmt(iso) {
+  if (!iso) return 'never';
+  return new Date(iso).toLocaleString();
+}
+async function refreshMeta() {
+  try {
+    const j = await fetch('/meta').then(r => r.json());
+    document.getElementById('lastrun').textContent = fmt(j.last_triggered);
+  } catch (e) {}
+}
 async function go() {
   const btn = document.getElementById('go');
   const status = document.getElementById('status');
@@ -64,7 +89,9 @@ async function go() {
     status.textContent = 'request failed: ' + e;
   }
   btn.disabled = false;
+  refreshMeta();
 }
+refreshMeta();
 </script>
 </body>
 </html>"""
@@ -98,6 +125,22 @@ def trigger_one(name, base, key, command):
         return f"{name} ({command}): FAILED - {e}"
 
 
+def record_trigger():
+    try:
+        with open(LAST_TRIGGERED_FILE, "w") as f:
+            f.write(datetime.datetime.now(datetime.timezone.utc).isoformat())
+    except Exception:
+        pass  # best-effort -- never let this break the actual trigger
+
+
+def get_last_triggered():
+    try:
+        with open(LAST_TRIGGERED_FILE) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None
+
+
 class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode()
@@ -115,12 +158,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+        elif self.path == "/meta":
+            self._json({"last_triggered": get_last_triggered()})
         else:
             self.send_response(404)
             self.end_headers()
 
     def do_POST(self):
         if self.path == "/trigger":
+            record_trigger()
             lines = [trigger_one(*s) for s in SEARCHES]
             self._json({"lines": lines})
         else:

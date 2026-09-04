@@ -7,6 +7,7 @@ in place exactly like clicking each app's own native pause button.
 """
 import json
 import os
+import datetime
 import urllib.request
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +17,10 @@ SABNZBD_API_KEY = os.environ["SABNZBD_API_KEY"]
 QBIT_URL = os.environ["QBIT_URL"]  # e.g. http://gluetun:8181
 QBIT_USER = os.environ["QBIT_USER"]
 QBIT_PASS = os.environ["QBIT_PASS"]
+
+# /state is a bind mount (see docker-compose.yml) so "last triggered"
+# survives container recreation, not just a restart.
+LAST_TRIGGERED_FILE = "/state/last-triggered.json"
 
 PAGE = """<!doctype html>
 <html>
@@ -32,18 +37,37 @@ PAGE = """<!doctype html>
   #pause { background: #c0392b; color: white; }
   #resume { background: #27ae60; color: white; }
   #status { font-size: 1rem; color: #999; min-height: 1.5em; text-align: center; }
+  #info { font-size: 0.8rem; color: #777; text-align: left; max-width: 360px;
+          background: #1a1a1a; padding: 12px 16px; border-radius: 10px; line-height: 1.5; }
+  #lastrun { font-size: 0.8rem; color: #888; }
 </style>
 </head>
 <body>
+  <div id="info">Pauses/resumes SABnzbd and qBittorrent together via each
+    app's own API -- no containers touched, no queue state lost, same as
+    clicking each app's own native pause button.<br>
+    Last triggered: <span id="lastrun">loading...</span></div>
   <div id="status">checking status...</div>
   <button id="pause" onclick="act('/pause')">⏸ Pause All Downloads</button>
   <button id="resume" onclick="act('/resume')">▶ Resume All Downloads</button>
 <script>
+function fmt(iso) {
+  if (!iso) return 'never';
+  return new Date(iso).toLocaleString();
+}
+async function refreshMeta() {
+  try {
+    const j = await fetch('/meta').then(r => r.json());
+    document.getElementById('lastrun').textContent =
+      j.last_time ? fmt(j.last_time) + ' (' + j.last_action + ')' : 'never';
+  } catch (e) {}
+}
 async function act(path) {
   document.getElementById('status').textContent = 'working...';
   const r = await fetch(path, {method: 'POST'});
   const j = await r.json();
   document.getElementById('status').textContent = j.message;
+  refreshMeta();
 }
 async function refresh() {
   try {
@@ -55,6 +79,7 @@ async function refresh() {
   }
 }
 refresh();
+refreshMeta();
 setInterval(refresh, 15000);
 </script>
 </body>
@@ -108,6 +133,22 @@ def qbit_any_active():
     return any(t.get("state") not in ("pausedDL", "pausedUP", "stoppedDL", "stoppedUP") for t in torrents)
 
 
+def record_trigger(action):
+    try:
+        with open(LAST_TRIGGERED_FILE, "w") as f:
+            json.dump({"time": datetime.datetime.now(datetime.timezone.utc).isoformat(), "action": action}, f)
+    except Exception:
+        pass  # best-effort -- never let this break the actual pause/resume
+
+
+def get_last_triggered():
+    try:
+        with open(LAST_TRIGGERED_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode()
@@ -138,12 +179,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"message": msg})
             except Exception as e:
                 self._json({"message": f"status check failed: {e}"}, 500)
+        elif self.path == "/meta":
+            meta = get_last_triggered()
+            self._json({"last_time": meta.get("time"), "last_action": meta.get("action")})
         else:
             self.send_response(404)
             self.end_headers()
 
     def do_POST(self):
         if self.path == "/pause":
+            record_trigger("paused")
             errors = []
             try:
                 sab_request("pause")
@@ -156,6 +201,7 @@ class Handler(BaseHTTPRequestHandler):
             msg = "⏸ Paused" if not errors else "Partial failure: " + "; ".join(errors)
             self._json({"message": msg})
         elif self.path == "/resume":
+            record_trigger("resumed")
             errors = []
             try:
                 sab_request("resume")

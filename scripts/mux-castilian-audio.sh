@@ -45,10 +45,10 @@ set -uo pipefail
 
 DURATION_TOLERANCE=3   # seconds
 
-# Kept in sync with the "Spanish Audio" custom format's negate-latino regex
-# in Sonarr/Radarr and scripts/arr-audio-lang-check.sh (2026-09-03).
-LATAM_PATTERN='latino|lat[.-]?am|latin[.-]?america|es[-]?419|mexic|hispanoamerican|neutro|neutral'
-CASTILIAN_PATTERN='castellano|castilian|european|espa.a|peninsular|iberian'
+# LATAM_PATTERN/CASTILIAN_PATTERN -- see castilian-patterns.sh (shared with
+# arr-audio-lang-check.sh and archive-castilian-audio.sh so the three bash
+# copies can't drift out of sync with each other).
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/castilian-patterns.sh"
 
 DRY_RUN=0
 MOVIE_MODE=0
@@ -192,7 +192,10 @@ process_pair() {
 }
 
 if [[ "$MOVIE_MODE" -eq 1 ]]; then
-    mapfile -d '' -t src_files < <(find "$SOURCE_DIR" -type f \( -iname '*.mkv' -o -iname '*.mp4' \) -print0)
+    # Source can be an audio-only .mka (e.g. from archive-castilian-audio.sh's
+    # archive) as well as a real video file -- target is always a real
+    # library file, never .mka.
+    mapfile -d '' -t src_files < <(find "$SOURCE_DIR" -type f \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.mka' \) -print0)
     mapfile -d '' -t tgt_files < <(find "$TARGET_DIR" -type f \( -iname '*.mkv' -o -iname '*.mp4' \) -print0)
     if [[ "${#src_files[@]}" -ne 1 ]]; then
         echo "mux-castilian-audio: --movie requires exactly one video file in source_dir, found ${#src_files[@]}: $SOURCE_DIR" >&2
@@ -219,7 +222,7 @@ else
             continue
         fi
         process_pair "$src" "$tgt" "S${key/-/E} ($(basename "$tgt"))"
-    done < <(find "$SOURCE_DIR" -type f \( -iname '*.mkv' -o -iname '*.mp4' \) -print0)
+    done < <(find "$SOURCE_DIR" -type f \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.mka' \) -print0)
 fi
 
 log "done: $MUXED muxed, $SKIPPED skipped, $FAILED failed"

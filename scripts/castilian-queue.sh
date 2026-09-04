@@ -52,6 +52,7 @@ QUEUE_DIR="${CASTILIAN_QUEUE_DIR:-/mnt/vault/mega-staging/queue}"
 QUEUE_FILE="$QUEUE_DIR/queue.tsv"
 MEGARC="${CASTILIAN_MEGARC:-/mnt/vault/mega-staging/.megarc}"
 MUX_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/mux-castilian-audio.sh"
+ARCHIVE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/archive-castilian-audio.sh"
 MAX_HOPS=5
 MEGA_LINK_RE='^https://mega\.nz/(folder|file)/'
 
@@ -290,6 +291,17 @@ cmd_run() {
         fi
         update_row "$id" "DONE" "$summary"
         log "job $id DONE: $summary"
+
+        # Archive whatever Castellano track just landed in $target -- see
+        # archive-castilian-audio.sh. Deliberately non-fatal: never let an
+        # archiving problem flip an otherwise-successful job to FAILED, and
+        # deliberately not redirected anywhere so a failure still shows up
+        # in this same log rather than vanishing silently.
+        if [[ "$mode" == "movie" ]]; then
+            bash "$ARCHIVE_SCRIPT" "$target" --movie 2>&1 | sed "s/^/castilian-queue: job $id archive: /"
+        else
+            bash "$ARCHIVE_SCRIPT" "$target" 2>&1 | sed "s/^/castilian-queue: job $id archive: /"
+        fi
     done <<< "$rows"
 }
 

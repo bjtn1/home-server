@@ -30,10 +30,11 @@ set -uo pipefail
 
 NTFY_URL="https://ntfy.bjtn.xyz/homelab-alerts"
 
-# Kept in sync with the "Spanish Audio" custom format's negate-latino
-# regex in Sonarr/Radarr (updated 2026-09-03 -- see that custom format for
-# the canonical version if this drifts).
-LATAM_PATTERN='latino|lat[.-]?am|latin[.-]?america|es[-]?419|mexic|hispanoamerican|neutro|neutral'
+# LATAM_PATTERN -- see castilian-patterns.sh (shared with
+# mux-castilian-audio.sh and archive-castilian-audio.sh). This script runs
+# inside the Sonarr/Radarr containers, which mount this scripts/ dir at
+# /scripts -- same directory this file lives in either way.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/castilian-patterns.sh"
 
 if [[ -n "${sonarr_eventtype:-}" ]]; then
     event="$sonarr_eventtype"

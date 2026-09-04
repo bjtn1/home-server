@@ -48,6 +48,13 @@
 # Work queue for pulling Castilian releases from MEGA and handing them off
 # to mux-castilian-audio.sh, 2026-09-03
 !castilian-queue.sh
+# Shared LATAM_PATTERN/CASTILIAN_PATTERN constants, sourced by the three
+# scripts above so they can't drift out of sync with each other, 2026-09-04
+!castilian-patterns.sh
+# Archives Castilian audio tracks out of library files into a standalone,
+# restic-backed audio-only archive so they never have to be re-hunted from
+# MEGA if a library file is ever replaced, 2026-09-04
+!archive-castilian-audio.sh
 # Immich OBS-album membership sync, bjtn crontab (2026-09-02). API key is
 # NOT in this file -- passed inline via crontab's env prefix, same
 # treatment as the Sonarr/Radarr keys in arr-cutoff-search.sh's history.

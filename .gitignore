@@ -68,6 +68,9 @@
 # Castilian tracks, matches them to owned Sonarr/Radarr library items via
 # live lookup, and hands off to castilian-queue.sh -- 2026-09-04
 !castilian-drop-scan.sh
+# Read-only audit: reports every show/movie in the library still missing
+# Castilian audio on some or all of its files -- 2026-09-04
+!castilian-coverage-report.sh
 # Immich OBS-album membership sync, bjtn crontab (2026-09-02). API key is
 # NOT in this file -- passed inline via crontab's env prefix, same
 # treatment as the Sonarr/Radarr keys in arr-cutoff-search.sh's history.

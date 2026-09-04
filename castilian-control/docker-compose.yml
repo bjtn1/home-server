@@ -4,6 +4,8 @@ services:
     container_name: castilian-control
     restart: unless-stopped
     user: "1000:1000"
+    env_file:
+      - .env
     volumes:
       - ../scripts:/scripts:ro
       - /mnt/vault:/mnt/vault

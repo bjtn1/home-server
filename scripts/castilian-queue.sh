@@ -263,8 +263,12 @@ cmd_run() {
             log "job $id: local source $stage"
         fi
 
+        # .mka included since 2026-09-04 -- castilian-drop-scan.sh stages
+        # audio-only extracts here (no video at all), which this check
+        # would otherwise fail as "no media files found" before ever
+        # reaching mux-castilian-audio.sh (which already accepts .mka).
         local n
-        n=$(find "$stage" -type f \( -iname '*.mkv' -o -iname '*.mp4' \) | wc -l)
+        n=$(find "$stage" -type f \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.mka' \) | wc -l)
         if [[ "$n" -eq 0 ]]; then
             update_row "$id" "FAILED" "no media files found at source"
             log "job $id FAILED: no media files at $stage"

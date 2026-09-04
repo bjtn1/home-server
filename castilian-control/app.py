@@ -36,6 +36,17 @@ RESUME_PATH_RE = re.compile(r"^/resume/(\d+)$")
 # triggered" survives container recreation, not just a restart.
 LAST_TRIGGERED_FILE = "/mnt/vault/mega-staging/queue/.control-last-triggered"
 
+# "Scan Drop Folder" -- runs castilian-drop-scan.sh (2026-09-04), separate
+# from the queue Run/Stop/Resume above: scanning bucket-sorts/matches new
+# drops and queues jobs, it never runs them. Own log/offset/last-triggered
+# files, same shape as the queue's own, so a scan's progress doesn't get
+# mixed up with a queue run's.
+SCAN_SCRIPT = "/scripts/castilian-drop-scan.sh"
+DROP_DIR = os.environ.get("CASTILIAN_DROP_DIR", "/mnt/vault/mega-staging/drop-zone")
+SCAN_LOG = "/mnt/vault/mega-staging/queue/control-scan.log"
+SCAN_RUN_OFFSET_FILE = "/mnt/vault/mega-staging/queue/.control-scan-offset"
+SCAN_LAST_TRIGGERED_FILE = "/mnt/vault/mega-staging/queue/.control-scan-last-triggered"
+
 # Processes we're willing to stop on request. Matched by substring against
 # /proc/<pid>/cmdline rather than tracking a specific subprocess.Popen
 # handle, so a Stop works regardless of whether the run in flight was
@@ -75,10 +86,10 @@ PAGE = """<!doctype html>
           box-sizing: border-box; }
   #info code { color: #9db8d8; }
   #lastrun { font-size: 0.8rem; color: #888; }
-  #barwrap { width: 90vw; max-width: 700px; height: 10px; background: #1a1a1a;
+  .barwrap { width: 90vw; max-width: 700px; height: 10px; background: #1a1a1a;
              border-radius: 6px; overflow: hidden; }
-  #barfill { height: 100%; width: 0%; background: #2d7de0; transition: width 0.4s ease; }
-  #barlabel { font-size: 0.8rem; color: #999; }
+  .barfill { height: 100%; width: 0%; background: #2d7de0; transition: width 0.4s ease; }
+  .barlabel { font-size: 0.8rem; color: #999; }
 </style>
 </head>
 <body>
@@ -91,8 +102,8 @@ PAGE = """<!doctype html>
     Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">&#127464;&#127466; Run Castilian Queue</button>
   <button id="stop" onclick="stopAll()" style="background:#b03030;">&#9209; Stop Everything</button>
-  <div id="barwrap" hidden><div id="barfill"></div></div>
-  <div id="barlabel"></div>
+  <div id="barwrap" class="barwrap" hidden><div id="barfill" class="barfill"></div></div>
+  <div id="barlabel" class="barlabel"></div>
   <button id="resumeall" onclick="resumeAll()" style="background:#3a8a4a;">&#9654; Resume All Stopped</button>
   <h3>Queue status</h3>
   <table id="queue"><thead><tr><th>ID</th><th>Status</th><th>Mode</th><th>Target</th><th>Note</th><th></th></tr></thead>
@@ -100,6 +111,20 @@ PAGE = """<!doctype html>
   <div id="empty" hidden>(empty queue)</div>
   <h3>Recent log</h3>
   <pre id="log">loading...</pre>
+  <div id="info" style="margin-top:8px;">Scans <code>/mnt/vault/mega-staging/drop-zone</code> recursively: detects
+    which dropped files are genuinely Castilian, rejects the rest to
+    <code>drop-rejected/</code> (moved, not deleted), matches the rest
+    against your Sonarr/Radarr library via live lookup, and queues a job
+    here for anything it's confident about -- matched originals move to
+    <code>drop-processed/</code>, unmatched ones are left in place for the
+    next scan. Queues jobs but does not run them -- hit "Run Castilian
+    Queue" above once you see what got added.<br>
+    Last scanned: <span id="scanlastrun">loading...</span></div>
+  <button id="scango" onclick="scanGo()">&#128269; Scan Drop Folder</button>
+  <div id="scanbarwrap" class="barwrap" hidden><div id="scanbarfill" class="barfill"></div></div>
+  <div id="scanbarlabel" class="barlabel"></div>
+  <h3>Scan log</h3>
+  <pre id="scanlog">loading...</pre>
 <script>
 function fmt(iso) {
   if (!iso) return 'never';
@@ -197,9 +222,53 @@ async function refresh() {
     document.getElementById('log').textContent = l || '(nothing yet)';
   } catch (e) { document.getElementById('log').textContent = 'error: ' + e; }
 }
+async function refreshScanMeta() {
+  try {
+    const j = await fetch('/scan-meta').then(r => r.json());
+    document.getElementById('scanlastrun').textContent =
+      j.last_time ? fmt(j.last_time) : 'never';
+  } catch (e) {}
+}
+async function refreshScanLog() {
+  try {
+    const l = await fetch('/scan-log').then(r => r.text());
+    document.getElementById('scanlog').textContent = l || '(nothing yet)';
+  } catch (e) { document.getElementById('scanlog').textContent = 'error: ' + e; }
+}
+async function refreshScanProgress() {
+  const wrap = document.getElementById('scanbarwrap');
+  const label = document.getElementById('scanbarlabel');
+  try {
+    const j = await fetch('/scan-progress').then(r => r.json());
+    if (!j.running && j.done === 0) { wrap.hidden = true; label.textContent = ''; return; }
+    wrap.hidden = false;
+    const pct = j.total ? Math.round(100 * j.done / j.total) : 0;
+    document.getElementById('scanbarfill').style.width = pct + '%';
+    label.textContent = j.running
+      ? `${j.done} of ${j.total} files scanned`
+      : `${j.done} of ${j.total} files scanned (finished)`;
+  } catch (e) {}
+}
+async function scanGo() {
+  const btn = document.getElementById('scango');
+  btn.disabled = true;
+  try {
+    await fetch('/scan', {method: 'POST'});
+  } catch (e) {}
+  setTimeout(() => { btn.disabled = false; }, 3000);
+  refreshScanMeta();
+  refreshScanLog();
+  refreshScanProgress();
+  refresh();
+}
 refresh();
 refreshMeta();
+refreshScanMeta();
+refreshScanLog();
+refreshScanProgress();
 setInterval(refresh, 5000);
+setInterval(refreshScanLog, 5000);
+setInterval(refreshScanProgress, 5000);
 </script>
 </body>
 </html>"""
@@ -329,6 +398,94 @@ def get_last_triggered():
         return {}
 
 
+def count_total_drop_files() -> int:
+    # Same find pattern castilian-drop-scan.sh itself walks -- keeps the
+    # progress bar's total in sync with what the script will actually
+    # process, video files only (not the .mka it extracts as it goes).
+    try:
+        r = subprocess.run(
+            ["find", DROP_DIR, "-type", "f", "(", "-iname", "*.mkv", "-o", "-iname", "*.mp4", ")"],
+            capture_output=True, text=True, timeout=30)
+        return len([l for l in r.stdout.splitlines() if l.strip()])
+    except Exception:
+        return 0
+
+
+def tail_scan_log(n=200) -> str:
+    try:
+        with open(SCAN_LOG) as f:
+            return "".join(reversed(f.readlines()[-n:]))  # newest first
+    except FileNotFoundError:
+        return ""
+    except Exception as e:
+        return f"error reading log: {e}"
+
+
+def start_scan():
+    # Same offset+total snapshot trick as supernote-control.py/backup-control.py:
+    # record the log's current size and today's file count *before*
+    # starting, so /scan-progress only counts this run's "processing: "
+    # lines (castilian-drop-scan.sh logs one per file, pass 1) against the
+    # right total, not a previous run's leftover lines.
+    try:
+        offset = os.path.getsize(SCAN_LOG)
+    except FileNotFoundError:
+        offset = 0
+    try:
+        with open(SCAN_RUN_OFFSET_FILE, "w") as f:
+            json.dump({"offset": offset, "total": count_total_drop_files()}, f)
+    except Exception:
+        pass
+    with open(SCAN_LOG, "a") as f:
+        f.write("\n----- scan triggered -----\n")
+        f.flush()
+        subprocess.Popen([SCAN_SCRIPT], stdout=f, stderr=subprocess.STDOUT,
+                          stdin=subprocess.DEVNULL, start_new_session=True)
+
+
+def is_scan_running() -> bool:
+    try:
+        r = subprocess.run(["pgrep", "-f", "castilian-drop-scan.sh"], capture_output=True, timeout=5)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def get_scan_progress() -> dict:
+    try:
+        with open(SCAN_RUN_OFFSET_FILE) as f:
+            state = json.load(f)
+        offset, total = state["offset"], state["total"]
+    except Exception:
+        offset, total = 0, 0
+    done = 0
+    try:
+        with open(SCAN_LOG, "rb") as f:
+            f.seek(offset)
+            for line in f:
+                if b"processing: " in line:
+                    done += 1
+    except FileNotFoundError:
+        pass
+    return {"done": min(done, total) if total else done, "total": total, "running": is_scan_running()}
+
+
+def record_scan_trigger():
+    try:
+        with open(SCAN_LAST_TRIGGERED_FILE, "w") as f:
+            json.dump({"time": datetime.datetime.now(datetime.timezone.utc).isoformat()}, f)
+    except Exception:
+        pass  # best-effort -- never let this break the actual trigger
+
+
+def get_scan_last_triggered():
+    try:
+        with open(SCAN_LAST_TRIGGERED_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _text(self, body: str, code=200):
         data = body.encode()
@@ -365,12 +522,36 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+        elif self.path == "/scan-log":
+            self._text(tail_scan_log())
+        elif self.path == "/scan-meta":
+            meta = get_scan_last_triggered()
+            data = json.dumps({"last_time": meta.get("time")}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path == "/scan-progress":
+            data = json.dumps(get_scan_progress()).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         else:
             self.send_response(404)
             self.end_headers()
 
     def do_POST(self):
-        if self.path == "/trigger":
+        if self.path == "/scan":
+            record_scan_trigger()
+            try:
+                start_scan()
+                self._text("started")
+            except Exception as e:
+                self._text(f"failed to start: {e}", code=500)
+        elif self.path == "/trigger":
             record_trigger("run")
             try:
                 start_run()

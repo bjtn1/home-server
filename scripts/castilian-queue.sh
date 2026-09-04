@@ -3,30 +3,26 @@
 # muxed into existing library files, built after doing this by hand for
 # Gravity Falls/Adventure Time got unwieldy (2026-09-03). See
 # mux-castilian-audio.sh for the actual muxing logic -- this script's job
-# is: get a source (from MEGA, or already sitting on disk) staged, and
-# hand it off to that script.
+# is: get a local source staged, and hand it off to that script.
 #
-# A queued source can be either:
-#   - a MEGA link (any form -- see below), which gets downloaded first, or
-#   - a local file or directory already on disk (you found/downloaded it
-#     yourself), used directly with no download step.
-#
-# Sites like the one this was built against don't always give you a direct
-# MEGA folder link -- a share is often a single "Importante leer.txt" (or a
-# .rar/.zip containing one) whose only content is the real folder link one
-# hop further in. resolve_link() follows that chain (txt -> link,
-# archive -> txt -> link) up to MAX_HOPS deep so you can just paste
-# whatever link you were given. Local sources skip this entirely.
+# MEGA-source support (download + "Importante leer.txt"/.rar indirection
+# resolution) was dropped 2026-09-04 -- castilian-drop-scan.sh now covers
+# the day-to-day case (drop a file, it gets matched and queued
+# automatically), so hunting down and pasting MEGA links by hand stopped
+# being the normal path. A queued source is always a local file or
+# directory already on disk now.
 #
 # This deliberately does NOT try to guess which show/movie a source is for
 # -- you give the target directory explicitly on `add`. Auto-matching a
 # Spanish folder name (e.g. "Agallas, el perro cobarde") to the right
 # Sonarr series (Courage the Cowardly Dog) is a real translation problem,
-# and guessing wrong here means muxing audio into the wrong show's files.
-# Not worth it.
+# and guessing wrong here means muxing audio into the wrong show's files --
+# castilian-drop-scan.sh does take that on, but safely (confident match
+# against the owned library via Sonarr/Radarr lookup, never a guess); this
+# script still never does.
 #
 # Usage:
-#   castilian-queue.sh add [--movie] <mega_link_or_local_path> <target_dir>
+#   castilian-queue.sh add [--movie] <local_path> <target_dir>
 #                                                      queue a job
 #   castilian-queue.sh run                            process all PENDING jobs
 #   castilian-queue.sh status [--json]                show the queue
@@ -50,96 +46,13 @@ set -uo pipefail
 
 QUEUE_DIR="${CASTILIAN_QUEUE_DIR:-/mnt/vault/mega-staging/queue}"
 QUEUE_FILE="$QUEUE_DIR/queue.tsv"
-MEGARC="${CASTILIAN_MEGARC:-/mnt/vault/mega-staging/.megarc}"
 MUX_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/mux-castilian-audio.sh"
 ARCHIVE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/archive-castilian-audio.sh"
-MAX_HOPS=5
-MEGA_LINK_RE='^https://mega\.nz/(folder|file)/'
 
 mkdir -p "$QUEUE_DIR"
 touch "$QUEUE_FILE"
 
 log() { echo "[$(date '+%F %T')] castilian-queue: $*" >&2; }
-
-megadl_cfg() {
-    if [[ -f "$MEGARC" ]]; then
-        megadl --config="$MEGARC" "$@"
-    else
-        megadl "$@"
-    fi
-}
-
-# Follow file/archive indirection down to a real mega.nz/folder/ link.
-# Prints the resolved folder link on success; prints nothing and returns 1
-# on failure (dead end, or too many hops).
-resolve_link() {
-    local link="$1" hop work
-    work=$(mktemp -d)
-    for ((hop = 0; hop < MAX_HOPS; hop++)); do
-        if [[ "$link" == *"/folder/"* ]]; then
-            echo "$link"
-            rm -rf "$work"
-            return 0
-        fi
-        if [[ "$link" != *"/file/"* ]]; then
-            log "resolve: not a recognizable mega.nz link: $link"
-            rm -rf "$work"
-            return 1
-        fi
-        rm -f "$work"/*
-        if ! megadl_cfg --path="$work" "$link" >/dev/null 2>&1; then
-            log "resolve: failed to download $link"
-            rm -rf "$work"
-            return 1
-        fi
-        local got
-        got=$(find "$work" -maxdepth 1 -type f | head -1)
-        if [[ -z "$got" ]]; then
-            log "resolve: nothing came down for $link"
-            rm -rf "$work"
-            return 1
-        fi
-        case "$got" in
-            *.txt)
-                link=$(grep -oE 'https://mega\.nz/(folder|file)/[A-Za-z0-9_-]+#[A-Za-z0-9_-]+' "$got" | head -1)
-                if [[ -z "$link" ]]; then
-                    log "resolve: $got had no mega.nz link inside it"
-                    rm -rf "$work"
-                    return 1
-                fi
-                ;;
-            *.rar)
-                mkdir -p "$work/extracted"
-                if ! unrar e -p- -o+ -inul "$got" "$work/extracted/" 2>/dev/null; then
-                    log "resolve: couldn't extract $got -- likely password-protected (these 'Importante leer' rars often are; check the site page for a password)"
-                    rm -rf "$work"
-                    return 1
-                fi
-                local inner
-                inner=$(find "$work/extracted" -iname '*.txt' | head -1)
-                if [[ -z "$inner" ]]; then
-                    log "resolve: no .txt found inside $got"
-                    rm -rf "$work"
-                    return 1
-                fi
-                link=$(grep -oE 'https://mega\.nz/(folder|file)/[A-Za-z0-9_-]+#[A-Za-z0-9_-]+' "$inner" | head -1)
-                if [[ -z "$link" ]]; then
-                    log "resolve: $inner had no mega.nz link inside it"
-                    rm -rf "$work"
-                    return 1
-                fi
-                ;;
-            *)
-                log "resolve: don't know how to follow $(basename "$got") (not .txt/.rar)"
-                rm -rf "$work"
-                return 1
-                ;;
-        esac
-    done
-    log "resolve: gave up after $MAX_HOPS hops"
-    rm -rf "$work"
-    return 1
-}
 
 cmd_add() {
     local mode="tv"
@@ -147,20 +60,18 @@ cmd_add() {
         mode="movie"
         shift
     fi
-    local usage="usage: castilian-queue.sh add [--movie] <mega_link_or_local_path> <target_dir>"
+    local usage="usage: castilian-queue.sh add [--movie] <local_path> <target_dir>"
     local source="${1:?$usage}"
     local target="${2:?$usage}"
     if [[ ! -d "$target" ]]; then
         echo "castilian-queue: target dir does not exist: $target" >&2
         return 1
     fi
-    if [[ ! "$source" =~ $MEGA_LINK_RE ]]; then
-        if [[ ! -e "$source" ]]; then
-            echo "castilian-queue: not a MEGA link (https://mega.nz/folder/... or /file/...) and no such local path: $source" >&2
-            return 1
-        fi
-        source=$(realpath -- "$source")
+    if [[ ! -e "$source" ]]; then
+        echo "castilian-queue: no such local path: $source" >&2
+        return 1
     fi
+    source=$(realpath -- "$source")
     local id
     id=$(( $(cut -f1 "$QUEUE_FILE" 2>/dev/null | sort -n | tail -1) + 1 ))
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$source" "$target" "PENDING" "-" "$mode" >> "$QUEUE_FILE"
@@ -168,10 +79,10 @@ cmd_add() {
 }
 
 cmd_status() {
-    local id link target status note mode
+    local id source target status note mode
     if [[ "${1:-}" == "--json" ]]; then
         local rows=()
-        while IFS=$'\t' read -r id link target status note mode; do
+        while IFS=$'\t' read -r id source target status note mode; do
             [[ -z "$id" ]] && continue
             rows+=("$(jq -n --arg id "$id" --arg status "$status" --arg mode "${mode:-tv}" \
                 --arg target "$(basename "$target")" --arg note "$note" \
@@ -185,7 +96,7 @@ cmd_status() {
         return
     fi
     printf '%-4s %-10s %-6s %-45s %s\n' "ID" "STATUS" "MODE" "TARGET" "NOTE"
-    while IFS=$'\t' read -r id link target status note mode; do
+    while IFS=$'\t' read -r id source target status note mode; do
         [[ -z "$id" ]] && continue
         printf '%-4s %-10s %-6s %-45s %s\n' "$id" "$status" "${mode:-tv}" "$(basename "$target")" "$note"
     done < "$QUEUE_FILE"
@@ -193,29 +104,29 @@ cmd_status() {
 
 update_row() {
     local id="$1" status="$2" note="$3"
-    local tmp rid link target rstatus rnote rmode
+    local tmp rid source target rstatus rnote rmode
     tmp=$(mktemp)
-    while IFS=$'\t' read -r rid link target rstatus rnote rmode; do
+    while IFS=$'\t' read -r rid source target rstatus rnote rmode; do
         [[ -z "$rid" ]] && continue
         rmode="${rmode:-tv}"
         if [[ "$rid" == "$id" ]]; then
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$rid" "$link" "$target" "$status" "$note" "$rmode"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$rid" "$source" "$target" "$status" "$note" "$rmode"
         else
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$rid" "$link" "$target" "$rstatus" "$rnote" "$rmode"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$rid" "$source" "$target" "$rstatus" "$rnote" "$rmode"
         fi
     done < "$QUEUE_FILE" > "$tmp"
     mv "$tmp" "$QUEUE_FILE"
 }
 
 cmd_run() {
-    local rows id link target status note mode
+    local rows id source target status note mode
 
     # This function only ever runs one-at-a-time (guarded by the flock in
     # the `run` case below), so any row still marked RUNNING when a fresh
     # invocation starts can only be left over from a previous run that
     # died without finishing -- killed process, crash, container restart.
     # Treat those as recoverable rather than stuck forever.
-    while IFS=$'\t' read -r id link target status note mode; do
+    while IFS=$'\t' read -r id source target status note mode; do
         [[ -z "$id" || "$status" != "RUNNING" ]] && continue
         log "job $id: found stuck in RUNNING (previous run died mid-job) -- resetting to PENDING to retry"
         update_row "$id" "PENDING" "retrying after an interrupted previous attempt"
@@ -226,42 +137,21 @@ cmd_run() {
         log "nothing pending"
         return 0
     fi
-    while IFS=$'\t' read -r id link target status note mode; do
+    while IFS=$'\t' read -r id source target status note mode; do
         [[ -z "$id" ]] && continue
         mode="${mode:-tv}"
         log "--- job $id ($mode): $target ---"
 
+        # Given to us as-is on `add`, used directly -- no download step, but
+        # it could've been moved/deleted since.
         local stage
-        if [[ "$link" =~ $MEGA_LINK_RE ]]; then
-            update_row "$id" "RUNNING" "resolving link"
-            local resolved
-            resolved=$(resolve_link "$link")
-            if [[ -z "$resolved" ]]; then
-                update_row "$id" "FAILED" "could not resolve link to a folder"
-                log "job $id FAILED: could not resolve link"
-                continue
-            fi
-            log "job $id: resolved to $resolved"
-
-            stage="$QUEUE_DIR/job-$id"
-            mkdir -p "$stage"
-            update_row "$id" "RUNNING" "downloading"
-            if ! echo "all" | megadl_cfg --choose-files --path="$stage" "$resolved" >"$stage/download.log" 2>&1; then
-                update_row "$id" "FAILED" "download errored, see job-$id/download.log"
-                log "job $id FAILED: download error"
-                continue
-            fi
-        else
-            # Local source -- given to us as-is on `add`, used directly.
-            # No download step, but it could've been moved/deleted since.
-            if [[ ! -e "$link" ]]; then
-                update_row "$id" "FAILED" "local source no longer exists: $link"
-                log "job $id FAILED: local source missing"
-                continue
-            fi
-            stage="$link"
-            log "job $id: local source $stage"
+        if [[ ! -e "$source" ]]; then
+            update_row "$id" "FAILED" "local source no longer exists: $source"
+            log "job $id FAILED: local source missing"
+            continue
         fi
+        stage="$source"
+        log "job $id: local source $stage"
 
         # .mka included since 2026-09-04 -- castilian-drop-scan.sh stages
         # audio-only extracts here (no video at all), which this check
@@ -315,8 +205,8 @@ cmd_run() {
 # auto-retrying it on the next `run`. Safe to call anytime, including when
 # nothing is running.
 cmd_halt() {
-    local id link target status note mode found=0
-    while IFS=$'\t' read -r id link target status note mode; do
+    local id source target status note mode found=0
+    while IFS=$'\t' read -r id source target status note mode; do
         [[ -z "$id" || "$status" != "RUNNING" ]] && continue
         update_row "$id" "STOPPED" "stopped by request"
         log "job $id: marked STOPPED"
@@ -326,9 +216,10 @@ cmd_halt() {
 }
 
 # Marks a STOPPED row (or, with --all, every STOPPED row) back to PENDING
-# so the next `run` picks it up again (a fresh download/local-source pass,
-# not a mid-file resume -- MEGA doesn't support that; already-downloaded
-# files are skipped, not redone).
+# so the next `run` picks it up again -- a fresh pass over the local
+# source, not a mid-file resume. Cheap either way: mux-castilian-audio.sh's
+# own process_pair() skips any target that already has a Spanish track, so
+# a re-run doesn't redo work that already landed.
 #
 # Requires either an id or --all -- no bare "resume" that silently means
 # everything. Jobs can end up STOPPED for different reasons (one crashed,
@@ -337,9 +228,9 @@ cmd_halt() {
 # here for when you genuinely do want that, deliberately spelled out.
 cmd_resume() {
     local arg="${1:?usage: castilian-queue.sh resume <id>|--all}"
-    local id link target status note mode found=0
+    local id source target status note mode found=0
     if [[ "$arg" == "--all" ]]; then
-        while IFS=$'\t' read -r id link target status note mode; do
+        while IFS=$'\t' read -r id source target status note mode; do
             [[ -z "$id" || "$status" != "STOPPED" ]] && continue
             update_row "$id" "PENDING" "resumed after being stopped"
             log "job $id: marked PENDING (resumed)"
@@ -348,7 +239,7 @@ cmd_resume() {
         [[ "$found" -eq 0 ]] && log "nothing was STOPPED"
         return 0
     fi
-    while IFS=$'\t' read -r id link target status note mode; do
+    while IFS=$'\t' read -r id source target status note mode; do
         [[ "$id" == "$arg" ]] || continue
         if [[ "$status" != "STOPPED" ]]; then
             log "job $id: not STOPPED (currently $status), nothing to resume"
@@ -379,7 +270,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         halt)   cmd_halt ;;
         resume) shift; cmd_resume "$@" ;;
         *)
-            echo "Usage: $0 {add [--movie] <mega_link_or_local_path> <target_dir> | run | status [--json] | halt | resume <id>|--all}" >&2
+            echo "Usage: $0 {add [--movie] <local_path> <target_dir> | run | status [--json] | halt | resume <id>|--all}" >&2
             exit 1
             ;;
     esac

@@ -2,9 +2,9 @@
 """
 Single-page control panel for castilian-queue.sh (see
 ~/docker/scripts/castilian-queue.sh for the queue itself): Run, Stop, and
-Resume. A run can take hours (large downloads), so /trigger and /resume
-start it in the background and return immediately -- the page polls
-/status and /log to show progress instead.
+Resume. A run can still take a while (many episodes' worth of muxing back
+to back), so /trigger and /resume start it in the background and return
+immediately -- the page polls /status and /log to show progress instead.
 
 Double-click safety on Run comes from the queue script's own flock (see
 its `run` case) -- this app doesn't need to track "is it running" itself,
@@ -53,7 +53,7 @@ SCAN_LAST_TRIGGERED_FILE = "/mnt/vault/mega-staging/queue/.control-scan-last-tri
 # started via /trigger, a container restart in between, or the CLI
 # directly on the host -- anything matching in *this container's* PID
 # namespace is fair game.
-STOPPABLE = ("castilian-queue.sh", "megadl")
+STOPPABLE = ("castilian-queue.sh",)
 
 PAGE = """<!doctype html>
 <html>
@@ -93,12 +93,13 @@ PAGE = """<!doctype html>
 </style>
 </head>
 <body>
-  <div id="info">Runs <code>castilian-queue.sh</code> -- resolves queued
-    MEGA links or local sources, downloads/stages them, and hands them off
-    to <code>mux-castilian-audio.sh</code> to add the Castilian audio track
-    into the matching library file in place (video, existing audio, subs
-    untouched). Add jobs via the CLI (<code>castilian-queue.sh add</code>);
-    this page runs, stops, and resumes whatever's queued.<br>
+  <div id="info">Runs <code>castilian-queue.sh</code> -- stages queued
+    local sources and hands them off to <code>mux-castilian-audio.sh</code>
+    to add the Castilian audio track into the matching library file in
+    place (video, existing audio, subs untouched). Jobs get added here
+    automatically by "Scan Drop Folder" below, or manually via the CLI
+    (<code>castilian-queue.sh add</code>); this page runs, stops, and
+    resumes whatever's queued.<br>
     Last triggered: <span id="lastrun">loading...</span></div>
   <button id="go" onclick="go()">&#127464;&#127466; Run Castilian Queue</button>
   <button id="stop" onclick="stopAll()" style="background:#b03030;">&#9209; Stop Everything</button>

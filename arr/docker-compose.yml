@@ -96,10 +96,15 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
+      # ffmpeg (ffprobe) + jq for scripts/arr-audio-lang-check.sh -- the
+      # Alpine base image ships with neither.
+      - DOCKER_MODS=linuxserver/mods:universal-package-install
+      - INSTALL_PACKAGES=ffmpeg|jq
     volumes:
       - ./sonarr/config:/config
       - ${tv}:/tv
       - ${downloads}:/downloads
+      - ../scripts:/scripts:ro
     #ports:
       #- 8989:8989
     restart: unless-stopped
@@ -113,11 +118,14 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
+      - DOCKER_MODS=linuxserver/mods:universal-package-install
+      - INSTALL_PACKAGES=ffmpeg|jq
     volumes:
       - ./radarr/config:/config
       - ${movies}:/movies
       - ${movies_archive}:/movies-archive
       - ${downloads}:/downloads
+      - ../scripts:/scripts:ro
     #ports:
       #- 7878:7878
     restart: unless-stopped
@@ -143,8 +151,8 @@ services:
       - ${youtube}:/media/youtube:ro
       - ${music_sheets}:/media/music-sheets:ro
       - ${obs}:/obs:ro
-    #ports:
-      #- 8096:8096
+    ports:
+      - 8096:8096
     restart: unless-stopped
     networks:
         - bjtn-proxy

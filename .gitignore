@@ -38,6 +38,16 @@
 !disk-io-watchdog.sh
 !disk-io-watchdog-resolved.sh
 !disk-io-watchdog.conf
+# Sonarr/Radarr On Import custom script -- flags Latin-American/neutral
+# Spanish audio tracks that slip past the release-title-only custom format,
+# 2026-09-03
+!arr-audio-lang-check.sh
+# Muxes a Castilian Spanish audio track from a separately-downloaded release
+# into existing library files in place, 2026-09-03
+!mux-castilian-audio.sh
+# Work queue for pulling Castilian releases from MEGA and handing them off
+# to mux-castilian-audio.sh, 2026-09-03
+!castilian-queue.sh
 # Immich OBS-album membership sync, bjtn crontab (2026-09-02). API key is
 # NOT in this file -- passed inline via crontab's env prefix, same
 # treatment as the Sonarr/Radarr keys in arr-cutoff-search.sh's history.

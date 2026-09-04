@@ -198,6 +198,11 @@ search.bjtn.xyz {
   reverse_proxy arr-control:8767
 }
 
+castilian.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy castilian-control:8768
+}
+
 dozzle.bjtn.xyz {
   import porkbun_tls
   reverse_proxy dozzle:8080

@@ -29,7 +29,15 @@
 #   castilian-queue.sh add [--movie] <mega_link_or_local_path> <target_dir>
 #                                                      queue a job
 #   castilian-queue.sh run                            process all PENDING jobs
-#   castilian-queue.sh status                         show the queue
+#   castilian-queue.sh status [--json]                show the queue
+#   castilian-queue.sh halt                           mark any RUNNING job
+#                                                      STOPPED (state only --
+#                                                      pair with actually
+#                                                      killing the process)
+#   castilian-queue.sh resume <id>|--all               mark one (or, with
+#                                                       --all, every)
+#                                                       STOPPED job PENDING
+#                                                       again
 #
 # --movie matches mux-castilian-audio.sh's own --movie: source and target
 # must each contain exactly one video file, matched directly (no episode-
@@ -160,6 +168,21 @@ cmd_add() {
 
 cmd_status() {
     local id link target status note mode
+    if [[ "${1:-}" == "--json" ]]; then
+        local rows=()
+        while IFS=$'\t' read -r id link target status note mode; do
+            [[ -z "$id" ]] && continue
+            rows+=("$(jq -n --arg id "$id" --arg status "$status" --arg mode "${mode:-tv}" \
+                --arg target "$(basename "$target")" --arg note "$note" \
+                '{id:$id,status:$status,mode:$mode,target:$target,note:$note}')")
+        done < "$QUEUE_FILE"
+        if [[ "${#rows[@]}" -eq 0 ]]; then
+            echo '[]'
+        else
+            printf '%s\n' "${rows[@]}" | jq -s '.'
+        fi
+        return
+    fi
     printf '%-4s %-10s %-6s %-45s %s\n' "ID" "STATUS" "MODE" "TARGET" "NOTE"
     while IFS=$'\t' read -r id link target status note mode; do
         [[ -z "$id" ]] && continue
@@ -270,6 +293,59 @@ cmd_run() {
     done <<< "$rows"
 }
 
+# Marks any RUNNING row STOPPED. Pure state -- doesn't touch the actual OS
+# process (something else, e.g. castilian-control, has to have already
+# killed it); this just stops self-heal from treating it as a crash and
+# auto-retrying it on the next `run`. Safe to call anytime, including when
+# nothing is running.
+cmd_halt() {
+    local id link target status note mode found=0
+    while IFS=$'\t' read -r id link target status note mode; do
+        [[ -z "$id" || "$status" != "RUNNING" ]] && continue
+        update_row "$id" "STOPPED" "stopped by request"
+        log "job $id: marked STOPPED"
+        found=1
+    done < "$QUEUE_FILE"
+    [[ "$found" -eq 0 ]] && log "nothing was RUNNING"
+}
+
+# Marks a STOPPED row (or, with --all, every STOPPED row) back to PENDING
+# so the next `run` picks it up again (a fresh download/local-source pass,
+# not a mid-file resume -- MEGA doesn't support that; already-downloaded
+# files are skipped, not redone).
+#
+# Requires either an id or --all -- no bare "resume" that silently means
+# everything. Jobs can end up STOPPED for different reasons (one crashed,
+# another you told to stop and don't want back yet), and resuming all of
+# them by accident already restarted a real download once. --all is still
+# here for when you genuinely do want that, deliberately spelled out.
+cmd_resume() {
+    local arg="${1:?usage: castilian-queue.sh resume <id>|--all}"
+    local id link target status note mode found=0
+    if [[ "$arg" == "--all" ]]; then
+        while IFS=$'\t' read -r id link target status note mode; do
+            [[ -z "$id" || "$status" != "STOPPED" ]] && continue
+            update_row "$id" "PENDING" "resumed after being stopped"
+            log "job $id: marked PENDING (resumed)"
+            found=1
+        done < "$QUEUE_FILE"
+        [[ "$found" -eq 0 ]] && log "nothing was STOPPED"
+        return 0
+    fi
+    while IFS=$'\t' read -r id link target status note mode; do
+        [[ "$id" == "$arg" ]] || continue
+        if [[ "$status" != "STOPPED" ]]; then
+            log "job $id: not STOPPED (currently $status), nothing to resume"
+            return 1
+        fi
+        update_row "$id" "PENDING" "resumed after being stopped"
+        log "job $id: marked PENDING (resumed)"
+        return 0
+    done < "$QUEUE_FILE"
+    log "no such job: $arg"
+    return 1
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     case "${1:-}" in
         add)    shift; cmd_add "$@" ;;
@@ -283,9 +359,11 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
             flock -n 9 || { log "already running (lock held), exiting"; exit 0; }
             cmd_run
             ;;
-        status) cmd_status ;;
+        status) shift; cmd_status "$@" ;;
+        halt)   cmd_halt ;;
+        resume) shift; cmd_resume "$@" ;;
         *)
-            echo "Usage: $0 {add [--movie] <mega_link_or_local_path> <target_dir> | run | status}" >&2
+            echo "Usage: $0 {add [--movie] <mega_link_or_local_path> <target_dir> | run | status [--json] | halt | resume <id>|--all}" >&2
             exit 1
             ;;
     esac

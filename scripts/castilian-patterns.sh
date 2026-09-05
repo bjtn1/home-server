@@ -15,5 +15,16 @@
 # scripts would risk regressions in already-tested code for a cosmetic win;
 # sharing these two plain strings carries no such risk.
 
-LATAM_PATTERN='latino|lat[.-]?am|latin[.-]?america|es[-]?419|mexic|hispanoamerican|neutro|neutral'
-CASTILIAN_PATTERN='castellano|castilian|european|espa.a|peninsular|iberian'
+# 2026-09-04: LATAM_PATTERN's "latin[.-]?america" required a dot/dash (or
+# nothing) between the two words -- it never matched the very common
+# English-language container-tag phrasing "Spanish (Latin America)" (a
+# literal space), found live in the wild via mkvinfo/mkvmerge -J on a
+# real file (Cyberpunk: Edgerunners' NF WEB-DL release literally tags its
+# two Spanish tracks "Spanish (Latin America)" / "Spanish (Spain)").
+# CASTILIAN_PATTERN had the same gap in reverse: nothing here matched the
+# English word "Spain" at all, only Spanish-language spellings
+# (Castellano, España). Both are real, not hypothetical -- confirmed via
+# an actual coverage-report audit finding files that should have resolved
+# cleanly instead flagged ambiguous, entirely because of this gap.
+LATAM_PATTERN='latino|lat[.-]?am|latin[ .-]?america|es[-]?419|mexic|hispanoamerican|neutro|neutral'
+CASTILIAN_PATTERN='castellano|castilian|european|espa.a|peninsular|iberian|\bspain\b'

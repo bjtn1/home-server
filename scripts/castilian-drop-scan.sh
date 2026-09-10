@@ -72,6 +72,12 @@ TV_ROOT="${CASTILIAN_TV_ROOT:-/mnt/vault/tv}"
 MOVIES_ROOT="${CASTILIAN_MOVIES_ROOT:-/mnt/vault/movies}"
 NTFY_URL="https://ntfy.bjtn.xyz/homelab-alerts"
 QUEUE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/castilian-queue.sh"
+# Whisper content-based fallback (2026-09-08) -- see its own header for
+# what it does and why. WHISPER_SERVER_URL unset/empty means "not
+# configured" -- choose_castilian_track() below skips straight past it,
+# same degrade-gracefully-without-blocking pattern as HAVE_SONARR/
+# HAVE_RADARR further down this file.
+WHISPER_CHECK_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/castilian-whisper-check.sh"
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/castilian-patterns.sh"
 
@@ -165,41 +171,93 @@ tv_title_prefix() {
 }
 
 # Same detection logic as archive-castilian-audio.sh's choose_castilian_track()
-# (mkvmerge -J, spa-language audio, prefer a track whose title clearly says
-# Castilian if there's more than one, refuse to guess if ambiguous, reject
-# outright if it looks Latin-American/neutral) -- kept as its own copy
-# rather than sourced, same reasoning as that script's header: sharing
-# detection *logic* across scripts risks regressions in already-tested code
-# for a cosmetic win, sharing the two pattern constants (already done via
+# (mkvmerge -J, spa-language audio, require positive evidence of Castilian
+# per track -- an explicit es-ES language_ietf region tag, or a title/lang
+# match on CASTILIAN_PATTERN with no LATAM_PATTERN match -- refuse to guess
+# if none or more than one qualifies) -- kept as its own copy rather than
+# sourced, same reasoning as that script's header: sharing detection
+# *logic* across scripts risks regressions in already-tested code for a
+# cosmetic win, sharing the two pattern constants (already done via
 # castilian-patterns.sh) does not.
 #
+# 2026-09-05: see archive-castilian-audio.sh's identical fix for the full
+# story -- an untitled/region-less single Spanish track used to default to
+# CONFIRMED just because its title didn't match LATAM_PATTERN (Camp Lazlo
+# S01E13: language_ietf=es-419, generic non-dialect title, wrongly
+# accepted). Absence of a red flag is not proof; now requires an actual
+# positive match, checking language_ietf first since it's a structured tag
+# rather than free text.
+track_is_castilian() {
+    local ietf="$1" title="$2" lang="$3"
+    if [[ "$ietf" =~ ^[Ee][Ss]-([A-Za-z]{2}|[0-9]{3})$ ]]; then
+        [[ "${BASH_REMATCH[1],,}" == "es" ]]
+        return
+    fi
+    local check_text="$title $lang"
+    echo "$check_text" | grep -qiE "$CASTILIAN_PATTERN" && ! echo "$check_text" | grep -qiE "$LATAM_PATTERN"
+}
+
 # Prints the chosen track's JSON on success. Returns 2 if the file itself
 # couldn't be read (corrupt/damaged -- distinct from "readable, no usable
 # Castilian track", which is 1) so the caller never conflates "unknown
 # dialect" with "confirmed not Castilian".
 choose_castilian_track() {
     local file="$1"
-    local raw tracks n chosen track_title check_text
+    local raw tracks t ietf title lang chosen="" count=0
     raw=$(mkvmerge -J "$file" 2>/dev/null) || return 2
     jq -e '.tracks' >/dev/null 2>&1 <<<"$raw" || return 2
     tracks=$(jq -c '
       .tracks[]
       | select(.type == "audio")
       | select((.properties.language // "" | ascii_downcase) == "spa")
-      | {id, lang: (.properties.language // ""), title: (.properties.track_name // "")}
+      | {id, lang: (.properties.language // ""), ietf: (.properties.language_ietf // ""), title: (.properties.track_name // "")}
     ' <<<"$raw")
     [[ -z "$tracks" ]] && return 1
-    n=$(wc -l <<<"$tracks")
-    if [[ "$n" -gt 1 ]]; then
-        chosen=$(jq -c --arg pat "$CASTILIAN_PATTERN" 'select(.title | test($pat; "i"))' <<<"$tracks" | head -1)
-        [[ -z "$chosen" ]] && return 1
-        tracks="$chosen"
+    while IFS= read -r t; do
+        ietf=$(jq -r '.ietf' <<<"$t")
+        title=$(jq -r '.title' <<<"$t")
+        lang=$(jq -r '.lang' <<<"$t")
+        if track_is_castilian "$ietf" "$title" "$lang"; then
+            count=$((count+1))
+            chosen="$t"
+        fi
+    done <<<"$tracks"
+    if [[ "$count" -eq 1 ]]; then
+        echo "$chosen"
+        return 0
     fi
-    track_title=$(jq -r '.title' <<<"$tracks")
-    check_text="$track_title $(jq -r '.lang' <<<"$tracks")"
-    grep -qiE "$LATAM_PATTERN" <<<"$check_text" && return 1
-    echo "$tracks"
-    return 0
+
+    # Metadata alone couldn't confirm -- try the Whisper content-based
+    # fallback (2026-09-08), but only for the case it can actually help
+    # with: exactly ONE Spanish-tagged track exists, metadata just gives
+    # no dialect signal at all (count==0). A multi-track case (count>1) is
+    # a different problem -- which of several plausible tracks is right --
+    # and Whisper can't resolve that without first knowing which track to
+    # even listen to, so it's left alone, same as before.
+    if [[ "$count" -eq 0 && "$(wc -l <<<"$tracks")" -eq 1 && -n "${WHISPER_SERVER_URL:-}" ]]; then
+        local single_id audio_idx whisper_verdict
+        single_id=$(jq -r '.id' <<<"$tracks")
+        # 0-based position among ALL audio tracks (not just Spanish ones)
+        # -- what ffmpeg's -map 0:a:N expects, per castilian-extract-
+        # clip.sh's own header on why this isn't mkvmerge's `id`.
+        audio_idx=$(jq -r --argjson tid "$single_id" '
+            [.tracks[] | select(.type=="audio")] as $all
+            | ($all | map(.id) | index($tid)) // empty
+        ' <<<"$raw")
+        if [[ -n "$audio_idx" ]]; then
+            log "metadata inconclusive, trying Whisper content check: $(basename -- "$file") (track $single_id, audio index $audio_idx)"
+            "$WHISPER_CHECK_SCRIPT" "$file" "$audio_idx" >&2
+            whisper_verdict=$?
+            if [[ "$whisper_verdict" -eq 0 ]]; then
+                log "Whisper confirmed Castilian: $(basename -- "$file")"
+                echo "$tracks"
+                return 0
+            fi
+            log "Whisper did not confirm (exit $whisper_verdict, 1=not-Castilian 2=inconclusive 3=check-failed): $(basename -- "$file")"
+        fi
+    fi
+
+    return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -233,8 +291,13 @@ while IFS= read -r -d '' file; do
     dest_mka="$EXTRACT_DIR/${rel%.*}.mka"
     mkdir -p "$(dirname -- "$dest_mka")"
     tmp="${dest_mka}.tmp.$$"
+    # 2026-09-08: mkvmerge v92's --language sets the IETF BCP47 tag
+    # directly -- a bare "spa" gets silently normalized down to generic
+    # "es" (no region), leaving the track title as the only thing telling
+    # it apart from an es-419/LATAM track. "es-ES" is the real, specific
+    # tag we actually mean.
     if ! mkvmerge -q -o "$tmp" --audio-tracks "$track_id" --no-video --no-subtitles --no-chapters --no-attachments \
-        --language "${track_id}:spa" --track-name "${track_id}:Castellano" "$file"; then
+        --language "${track_id}:es-ES" --track-name "${track_id}:Castellano" "$file"; then
         log "ERROR (extraction failed, left in place): $file"
         rm -f -- "$tmp"
         CORRUPT_FILES+=("$rel (extraction failed)")
@@ -244,6 +307,21 @@ while IFS= read -r -d '' file; do
 
     if prefix=$(tv_title_prefix "$base"); then
         title=$(clean_title "$prefix")
+        if [[ -z "$title" ]]; then
+            # 2026-09-06: found live -- a filename like "2x10 Episode
+            # Name.mkv" has the marker as the very first thing, so
+            # tv_title_prefix() (and clean_title() after it) yields an
+            # empty string: no show name anywhere in the filename to
+            # search on. Fall back to the file's own subfolder name, a
+            # common real-world layout (<ShowName>/2x10 - Title.mkv) that
+            # tv_title_prefix() never considered since it only ever looked
+            # at the bare filename. If the file is flat in $DROP_DIR with
+            # no subfolder either, title stays empty -- pass 2 now treats
+            # that as an explicit no-match (logged + notified) rather than
+            # the silent skip it used to be (see its dedup loop).
+            parent_rel="${rel%/*}"
+            [[ "$parent_rel" != "$rel" ]] && title=$(clean_title "$(basename -- "$parent_rel")")
+        fi
         ekey=$(episode_key "$base") || ekey="-"
         printf '%s\t%s\t%s\t%s\t%s\n' "$dest_mka" "$file" "tv" "$title" "$ekey" >> "$MANIFEST"
     else
@@ -332,8 +410,29 @@ else
 
     distinct_titles=$(cut -f4 "$MANIFEST" | tr '[:upper:]' '[:lower:]' | sort -u)
     while IFS= read -r title_lower; do
-        [[ -z "$title_lower" ]] && continue
         group=$(awk -F'\t' -v t="$title_lower" 'tolower($4)==t' "$MANIFEST")
+        [[ -z "$group" ]] && continue   # a genuinely blank line from sort -u, not a real manifest row
+        if [[ -z "$title_lower" ]]; then
+            # 2026-09-06: this used to be a bare `continue` here, which
+            # silently dropped every file whose title came out empty (see
+            # the fallback added above) -- no log line, no ntfy
+            # notification, the extracted .mka just vanished and the
+            # original sat in $DROP_DIR forever with zero indication
+            # anything had gone wrong. Found live: 2 genuinely-Castilian
+            # files from a real drop had marker-first filenames with no
+            # subfolder to fall back on, and the "Run Whole Pipeline"
+            # button showed nothing at all for them. Treating this as an
+            # explicit no-match (same handling as any other unmatched
+            # title below) at least surfaces it instead of hiding it.
+            example=$(cut -f2 <<<"$group" | head -1)
+            log "NO MATCH: no title could be determined for $(wc -l <<<"$group") file(s) (marker-first filename, no subfolder to fall back on) -- e.g. $(basename -- "$example")"
+            UNMATCHED_TITLES+=("(untitled: $(basename -- "$example"), +$(( $(wc -l <<<"$group") - 1 )) more)")
+            while IFS=$'\t' read -r mka orig type ttitle ekey; do
+                [[ -z "$mka" ]] && continue
+                rm -f -- "$mka"
+            done <<<"$group"
+            continue
+        fi
         group_type="ambiguous"
         grep -qP '\ttv\t' <<<"$group" && group_type="tv"
         term=$(cut -f4 <<<"$group" | head -1)

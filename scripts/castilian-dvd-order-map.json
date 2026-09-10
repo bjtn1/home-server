@@ -1,0 +1,12 @@
+{
+  "_comment": "Authoritative Spanish-dub-numbering -> aired-episode-numbering maps, per Sonarr seriesId. Built 2026-09-09 from TheTVDB's own public 'Alternate DVD Order' pages (no login/API key needed -- https://thetvdb.com/series/<slug>/allseasons/altdvd vs .../allseasons/official), after confirming the Spanish source library's own NxNN numbering (and its bundled 'Title1 + Title2' filenames) matches TVDB's documented DVD order exactly, not aired/broadcast order. Verified by matching titles at every DVD entry across every season before trusting this. NOT assumed to generalize to other shows automatically -- a series with no entry here has no authoritative map and the matcher says so rather than guessing or falling back to translation.",
+  "3": {
+    "_comment": "Courage the Cowardly Dog. Seasons 1-3: clean 2-aired-episodes-per-DVD-episode pairing (DVD N = aired 2N-1, 2N). Season 2's last DVD entry (13) is a single episode because season 2 has an odd 25 aired episodes (trailing odd-one-out). Season 4 is the real irregular case: 25 aired episodes but the singleton ('The Mask') sits in the MIDDLE at DVD07, not at the end -- everything after it is shifted by one. This is exactly why '4x07' never found a clean match under the old translation/fuzzy approach.",
+    "seasons": {
+      "1": [[1,[1,2]],[2,[3,4]],[3,[5,6]],[4,[7,8]],[5,[9,10]],[6,[11,12]],[7,[13,14]],[8,[15,16]],[9,[17,18]],[10,[19,20]],[11,[21,22]],[12,[23,24]],[13,[25,26]]],
+      "2": [[1,[1,2]],[2,[3,4]],[3,[5,6]],[4,[7,8]],[5,[9,10]],[6,[11,12]],[7,[13,14]],[8,[15,16]],[9,[17,18]],[10,[19,20]],[11,[21,22]],[12,[23,24]],[13,[25]]],
+      "3": [[1,[1,2]],[2,[3,4]],[3,[5,6]],[4,[7,8]],[5,[9,10]],[6,[11,12]],[7,[13,14]],[8,[15,16]],[9,[17,18]],[10,[19,20]],[11,[21,22]],[12,[23,24]],[13,[25,26]]],
+      "4": [[1,[1,2]],[2,[3,4]],[3,[5,6]],[4,[7,8]],[5,[9,10]],[6,[11,12]],[7,[13]],[8,[14,15]],[9,[16,17]],[10,[18,19]],[11,[20,21]],[12,[22,23]],[13,[24,25]]]
+    }
+  }
+}

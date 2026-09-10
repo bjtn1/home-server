@@ -62,11 +62,62 @@ dump() {
   fi
 }
 
-dump grimmory-db docker exec grimmory-db sh -c 'mariadb-dump -ugrimmory -p"$MYSQL_PASSWORD" grimmory'
-dump romm-db     docker exec romm-db     sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --all-databases'
-dump yourls-db   docker exec yourls-db   sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --all-databases'
-dump immich-postgres docker exec immich_postgres sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dumpall -U "$POSTGRES_USER"'
-dump nextcloud-postgres docker exec nextcloud-db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dumpall -U "$POSTGRES_USER"'
+# Auto-discovers database containers by image rather than a fixed list,
+# so adding or removing a service's DB doesn't require remembering to
+# edit this script. Found live 2026-09-09, in both directions at once:
+# a long-decommissioned grimmory-db was still hardcoded here (silently
+# "failing" every single night), while a real, currently-running
+# youtarr-db was never added at all -- never backed up, zero signal
+# either way. Detected purely by each running container's IMAGE name
+# (mariadb/mysql vs postgres family); credentials are read from THAT
+# container's own environment (docker exec inherits it), trying each
+# family's common root-credential variable name in order -- confirmed
+# live that this genuinely varies even among containers already in use
+# here (romm-db/yourls-db use MARIADB_ROOT_PASSWORD, youtarr-db uses the
+# older MYSQL_ROOT_PASSWORD instead) -- and, found the same night, the
+# dump BINARY name varies just as much: youtarr-db's older mariadb:10.3
+# image only ships the legacy `mysqldump`, not the newer `mariadb-dump`
+# every other mariadb-family container here happens to have. Tries
+# mariadb-dump first, falls back to mysqldump if that binary doesn't
+# exist in the container at all. This covers the standard case (a
+# service using its image's normal root-auth setup, which is everything
+# currently running) -- a container with genuinely nonstandard auth
+# (e.g. a non-root-only user with no root password at all, which is what
+# made the old grimmory-db dump command look different from the others)
+# can't be discovered automatically, but it fails LOUDLY here (a clear
+# "FAILED dumping" line + non-zero exit, same as any other dump failure)
+# rather than silently never being attempted.
+while IFS=$'\t' read -r db_name db_image; do
+  case "$db_image" in
+    *mariadb*|*mysql*)
+      dump "$db_name" docker exec "$db_name" sh -c \
+        'DUMP_BIN=mariadb-dump; command -v "$DUMP_BIN" >/dev/null 2>&1 || DUMP_BIN=mysqldump
+         "$DUMP_BIN" -uroot -p"${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}" --all-databases'
+      ;;
+    *postgres*)
+      dump "$db_name" docker exec "$db_name" sh -c \
+        'PGPASSWORD="$POSTGRES_PASSWORD" pg_dumpall -U "${POSTGRES_USER:-postgres}"'
+      ;;
+  esac
+done < <(docker ps --format '{{.Names}}\t{{.Image}}')
+
+# Stale dumps from a since-removed database would otherwise sit in
+# STAGING forever (never deleted, just never updated) -- same "forget to
+# clean up" problem the fixed list had, just for output instead of input.
+# Only ever removes .sql files for containers NOT seen this run; a
+# transient blip that stops a container appearing in `docker ps` for one
+# run doesn't delete real data, it just means that container's dump.err
+# from the loop above (recorded as a normal dump failure) explains why
+# its .sql wasn't refreshed this time.
+running_dbs=$(docker ps --format '{{.Names}}' | sort)
+for f in "$STAGING"/*.sql; do
+  [ -e "$f" ] || continue
+  label=$(basename "$f" .sql)
+  if ! grep -qx "$label" <<<"$running_dbs"; then
+    echo "$LOG_TAG  removing stale dump: $label.sql (container no longer running)"
+    rm -f "$f"
+  fi
+done
 
 # Back up the crontab too, since that's config that lives nowhere else on disk.
 crontab -l > "$STAGING/bjtn-crontab.txt" 2>/dev/null
@@ -78,7 +129,6 @@ restic backup \
   "$STAGING" \
   --exclude /home/bjtn/docker/arr/romm/db \
   --exclude /home/bjtn/docker/yourls/db \
-  --exclude /home/bjtn/docker/grimmory/db \
   --exclude /home/bjtn/docker/immich/postgres \
   --exclude /home/bjtn/docker/nextcloud/postgres \
   --exclude /home/bjtn/docker/nextcloud/redis/dump.rdb \

@@ -34,6 +34,11 @@
 #                                                       --all, every)
 #                                                       STOPPED job PENDING
 #                                                       again
+#   castilian-queue.sh preview <id>                    print the JSON
+#                                                       preview (dry-run,
+#                                                       per-pair action +
+#                                                       reason) for one
+#                                                       PENDING job
 #
 # --movie matches mux-castilian-audio.sh's own --movie: source and target
 # must each contain exactly one video file, matched directly (no episode-
@@ -167,11 +172,19 @@ cmd_run() {
         log "job $id: $n media file(s) staged, muxing into $target"
 
         update_row "$id" "RUNNING" "muxing"
+        # 2026-09-08, "manual matching" feature: a human can redirect or
+        # supply a specific source->target pairing via the castilian-
+        # control preview UI before running -- stored per-job so it
+        # survives across a stuck-job retry, and picked up automatically
+        # here if present. No override file just means normal automatic
+        # episode-number matching, same as always.
+        local override_file="$QUEUE_DIR/job-$id.overrides.tsv" override_arg=()
+        [[ -f "$override_file" ]] && override_arg=(--override-pairs="$override_file")
         local mux_out
         if [[ "$mode" == "movie" ]]; then
-            mux_out=$(bash "$MUX_SCRIPT" "$stage" "$target" --movie 2>&1)
+            mux_out=$(bash "$MUX_SCRIPT" "$stage" "$target" --movie "${override_arg[@]}" 2>&1)
         else
-            mux_out=$(bash "$MUX_SCRIPT" "$stage" "$target" 2>&1)
+            mux_out=$(bash "$MUX_SCRIPT" "$stage" "$target" "${override_arg[@]}" 2>&1)
         fi
         local logdir="$QUEUE_DIR/job-$id"
         mkdir -p "$logdir"
@@ -253,6 +266,58 @@ cmd_resume() {
     return 1
 }
 
+# 2026-09-08, duration-mismatch review feature: marks a job PENDING again
+# regardless of its current status (DONE/FAILED/STOPPED all count) -- for
+# a standing source/target pair (e.g. a drop-zone directory that gets
+# re-checked periodically), "done" doesn't mean "never look at this again":
+# new files may have arrived, or a human may have just approved a specific
+# override (see castilian-control's duration-review page) that's worth
+# picking up on the next run. Cheap either way, same reasoning as
+# cmd_resume's own comment: mux-castilian-audio.sh's own process_pair()
+# skips anything that doesn't actually need touching.
+cmd_requeue() {
+    local id="${1:?usage: castilian-queue.sh requeue <id>}"
+    local rid source target status note mode
+    while IFS=$'\t' read -r rid source target status note mode; do
+        [[ "$rid" == "$id" ]] || continue
+        update_row "$id" "PENDING" "requeued"
+        log "job $id: marked PENDING (requeued)"
+        return 0
+    done < "$QUEUE_FILE"
+    log "no such job: $id"
+    return 1
+}
+
+# 2026-09-08, "manual matching" feature: prints the JSON array
+# mux-castilian-audio.sh's --json-out produces for one job's (source,
+# target) pair, run in --dry-run so nothing on disk changes -- this is
+# what castilian-control's preview UI calls to show every proposed pairing
+# (and why) before a human approves the job to actually run. Picks up the
+# same per-job override file cmd_run does, so the preview reflects
+# whatever's already been manually set.
+cmd_preview() {
+    local id="${1:?usage: castilian-queue.sh preview <id>}"
+    local rid source target status note mode found=0
+    while IFS=$'\t' read -r rid source target status note mode; do
+        [[ "$rid" == "$id" ]] || continue
+        found=1
+        mode="${mode:-tv}"
+        break
+    done < "$QUEUE_FILE"
+    if [[ "$found" -eq 0 ]]; then
+        echo "castilian-queue: no such job: $id" >&2
+        return 1
+    fi
+    local override_file="$QUEUE_DIR/job-$id.overrides.tsv" override_arg=()
+    [[ -f "$override_file" ]] && override_arg=(--override-pairs="$override_file")
+    local tmp movie_arg=()
+    tmp=$(mktemp)
+    [[ "$mode" == "movie" ]] && movie_arg=(--movie)
+    bash "$MUX_SCRIPT" "$source" "$target" --dry-run "${movie_arg[@]}" "${override_arg[@]}" --json-out="$tmp" >&2
+    cat "$tmp"
+    rm -f "$tmp"
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     case "${1:-}" in
         add)    shift; cmd_add "$@" ;;
@@ -269,8 +334,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         status) shift; cmd_status "$@" ;;
         halt)   cmd_halt ;;
         resume) shift; cmd_resume "$@" ;;
+        preview) shift; cmd_preview "$@" ;;
+        requeue) shift; cmd_requeue "$@" ;;
         *)
-            echo "Usage: $0 {add [--movie] <local_path> <target_dir> | run | status [--json] | halt | resume <id>|--all}" >&2
+            echo "Usage: $0 {add [--movie] <local_path> <target_dir> | run | status [--json] | halt | resume <id>|--all | preview <id> | requeue <id>}" >&2
             exit 1
             ;;
     esac

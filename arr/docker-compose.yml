@@ -198,8 +198,12 @@ services:
     volumes:
       - ${books}:/books # Default destination for book downloads
       - ./shelfmark/config:/config # App configuration
-      # Required for torrent / usenet - path must match your download client's volume exactly
-      # - /path/to/downloads:/path/to/downloads
+      # Required for torrent / usenet -- path must match your download client's
+      # volume exactly (same ${downloads} bind unpackerr uses below), found
+      # live 2026-09-10 after a real post-process step failed with
+      # "Permission denied: '/downloads'" -- this was left commented out,
+      # so /downloads didn't exist in the container at all.
+      - ${downloads}:/downloads
     networks:
       - bjtn-proxy
 

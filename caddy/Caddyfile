@@ -203,22 +203,17 @@ castilian.bjtn.xyz {
   reverse_proxy castilian-control:8768
 }
 
-# supernote-control runs directly on the host, not containerized -- it
-# needs real Docker daemon access (docker exec into nextcloud) that would
-# otherwise mean mounting the docker socket into a new container just for
-# this one button. host.docker.internal is already wired up for Caddy
-# (see caddy/docker-compose.yml's extra_hosts).
-note-to-pdf.bjtn.xyz {
+jenkins.bjtn.xyz {
   import porkbun_tls
-  reverse_proxy host.docker.internal:8769
+  reverse_proxy jenkins:8080
 }
 
-# backup-control also runs directly on the host, not containerized -- see
-# scripts/backup-control.py's header for why.
-backup.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy host.docker.internal:8770
-}
+# note-to-pdf.bjtn.xyz (supernote-control) and backup.bjtn.xyz
+# (backup-control) retired 2026-09-08 -- both were just web buttons to
+# trigger supernote-pdf-sync.sh/ssd-backup.sh by hand; superseded by real
+# Jenkins jobs (jenkins.bjtn.xyz) with their own Build Now button, real
+# build history, and console output. Services stopped+disabled
+# (systemctl --user), not deleted, if this ever needs reverting.
 
 dozzle.bjtn.xyz {
   import porkbun_tls

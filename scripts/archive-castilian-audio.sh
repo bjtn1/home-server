@@ -91,31 +91,61 @@ else
     exit 1
 fi
 
+# 2026-09-05: was "accept unless the title matches LATAM_PATTERN" -- an
+# untitled/region-less single track defaulted to CONFIRMED with zero
+# positive evidence either way. Found live: Camp Lazlo S01E13's Spanish
+# track has language_ietf=es-419 (BCP-47 for Latin American Spanish,
+# confirmed via mkvinfo) but a generic technical title with no dialect
+# wording at all -- the old title-only check never looked at
+# language_ietf, so it archived that Latin-American track as if it were
+# Castellano. Same root cause as the LATAM_PATTERN/CASTILIAN_PATTERN gap
+# fixed earlier tonight, different failure mode: that one was a regex
+# that was too narrow; this one never checked a whole field that exists
+# specifically to disambiguate this. track_is_castilian() now requires
+# positive evidence (an explicit es-ES region tag, or a title/lang match
+# on CASTILIAN_PATTERN with no LATAM_PATTERN match) -- absence of a red
+# flag is no longer treated as proof. language_ietf wins over title text
+# when both are present, since it's a structured tag, not free text.
+track_is_castilian() {
+    local ietf="$1" title="$2" lang="$3"
+    if [[ "$ietf" =~ ^[Ee][Ss]-([A-Za-z]{2}|[0-9]{3})$ ]]; then
+        [[ "${BASH_REMATCH[1],,}" == "es" ]]
+        return
+    fi
+    local check_text="$title $lang"
+    echo "$check_text" | grep -qiE "$CASTILIAN_PATTERN" && ! echo "$check_text" | grep -qiE "$LATAM_PATTERN"
+}
+
 # Same detection logic as mux-castilian-audio.sh's process_pair() steps
 # 1-2, minus the "does the target already have one" check (not applicable
 # here -- there's no separate target, we're archiving from a file that
 # already has the track). Prints one JSON object (the chosen track) on
-# success, or nothing if there's no usable Castilian track.
+# success, or nothing if there's no usable Castilian track. "No usable
+# track" now covers three cases uniformly: no Spanish track at all,
+# exactly one Spanish track but with no positive Castilian evidence
+# (Latino, OR just unlabeled/unverifiable -- both refuse the same way),
+# and 2+ tracks with more than one positive match (genuinely ambiguous).
 choose_castilian_track() {
     local file="$1"
-    local tracks n chosen track_title check_text
+    local tracks t ietf title lang chosen="" count=0
     tracks=$(mkvmerge -J "$file" 2>/dev/null | jq -c '
       .tracks[]
       | select(.type == "audio")
       | select((.properties.language // "" | ascii_downcase) == "spa")
-      | {id, lang: (.properties.language // ""), title: (.properties.track_name // "")}
+      | {id, lang: (.properties.language // ""), ietf: (.properties.language_ietf // ""), title: (.properties.track_name // "")}
     ')
     [[ -z "$tracks" ]] && return 1
-    n=$(echo "$tracks" | wc -l)
-    if [[ "$n" -gt 1 ]]; then
-        chosen=$(echo "$tracks" | jq -c --arg pat "$CASTILIAN_PATTERN" 'select(.title | test($pat; "i"))' | head -1)
-        [[ -z "$chosen" ]] && return 1   # ambiguous, none clearly Castilian -- refuse to guess
-        tracks="$chosen"
-    fi
-    track_title=$(echo "$tracks" | jq -r '.title')
-    check_text="$track_title $(echo "$tracks" | jq -r '.lang')"
-    echo "$check_text" | grep -qiE "$LATAM_PATTERN" && return 1   # looks Latino/neutral -- refuse
-    echo "$tracks"
+    while IFS= read -r t; do
+        ietf=$(jq -r '.ietf' <<<"$t")
+        title=$(jq -r '.title' <<<"$t")
+        lang=$(jq -r '.lang' <<<"$t")
+        if track_is_castilian "$ietf" "$title" "$lang"; then
+            count=$((count+1))
+            chosen="$t"
+        fi
+    done <<<"$tracks"
+    [[ "$count" -eq 1 ]] || return 1
+    echo "$chosen"
     return 0
 }
 
@@ -143,8 +173,12 @@ archive_one() {
 
     mkdir -p "$(dirname "$dest")"
     tmp="${dest}.tmp.$$"
+    # 2026-09-08: mkvmerge v92's --language sets the IETF BCP47 tag
+    # directly -- a bare "spa" gets silently normalized down to generic
+    # "es" (no region). "es-ES" is the real, specific tag we mean (see
+    # mux-castilian-audio.sh's identical fix for the full story).
     if mkvmerge -q -o "$tmp" --audio-tracks "$track_id" --no-video --no-subtitles --no-chapters --no-attachments \
-        --language "${track_id}:spa" --track-name "${track_id}:Castellano" "$file"; then
+        --language "${track_id}:es-ES" --track-name "${track_id}:Castellano" "$file"; then
         mv -f -- "$tmp" "$dest"
         log "ARCHIVED $dest"
         ARCHIVED=$((ARCHIVED+1))

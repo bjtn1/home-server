@@ -40,30 +40,80 @@ done
 
 log() { echo "[$(date '+%F %T')] castilian-coverage-report: $*" >&2; }
 
-# 0 = confirmed Castellano present, 1 = no Spanish track at all (or a
-# confirmed Latino one), 2 = ambiguous -- 2+ Spanish tracks, none of them
-# title-labeled as Castilian, so which one (if either) is Castellano is
-# genuinely unknown rather than absent.
+# 2026-09-05: was "accept unless the title matches LATAM_PATTERN" for the
+# single-track case -- an untitled/region-less track defaulted to
+# CONFIRMED with zero positive evidence either way. Found live: Camp
+# Lazlo S01E13's Spanish track has language_ietf=es-419 (BCP-47 for Latin
+# American Spanish, confirmed via mkvinfo) but a generic technical title
+# with no dialect wording at all -- the old check never looked at
+# language_ietf, so it silently counted a Latin-American track as
+# Castellano. And the show it exposed this on (Camp Lazlo) has 103 more
+# episodes in the exact same shape: single Spanish track, no title, no
+# language_ietf region at all -- genuinely unknown, not confirmed, and
+# not the same as "no Spanish track" either (that's a fresh-hunt case;
+# this might already be fine, just unverifiable from metadata). track_is_
+# castilian() now requires positive evidence per track (an explicit es-ES
+# region tag, or a title/lang match on CASTILIAN_PATTERN with no
+# LATAM_PATTERN match); language_ietf wins over title text when both are
+# present, since it's a structured tag, not free text.
+track_is_castilian() {
+    local ietf="$1" title="$2" lang="$3"
+    if [[ "$ietf" =~ ^[Ee][Ss]-([A-Za-z]{2}|[0-9]{3})$ ]]; then
+        [[ "${BASH_REMATCH[1],,}" == "es" ]]
+        return
+    fi
+    local check_text="$title $lang"
+    echo "$check_text" | grep -qiE "$CASTILIAN_PATTERN" && ! echo "$check_text" | grep -qiE "$LATAM_PATTERN"
+}
+
+# Same as track_is_castilian() but the opposite direction: is there
+# positive evidence this track is DEFINITELY NOT Castilian (Latin-
+# American/neutral), as opposed to merely "not confirmed Castilian"?
+# Needed to tell "every present Spanish track is confirmably Latino"
+# (genuinely absent -> need hunting) apart from "at least one track has
+# no evidence either way" (unverifiable -> needs a manual/audio check),
+# since those need very different next steps.
+track_is_definitely_latam() {
+    local ietf="$1" title="$2" lang="$3"
+    if [[ "$ietf" =~ ^[Ee][Ss]-([A-Za-z]{2}|[0-9]{3})$ ]]; then
+        [[ "${BASH_REMATCH[1],,}" != "es" ]]
+        return
+    fi
+    local check_text="$title $lang"
+    echo "$check_text" | grep -qiE "$LATAM_PATTERN"
+}
+
+# 0 = confirmed Castellano present (exactly one track has positive
+# evidence). 1 = confirmed absent -- either no Spanish track at all, or
+# every Spanish track present is confirmably Latino/neutral (by
+# language_ietf region or title text). 2 = unclear -- something's there
+# (2+ tracks both positively Castilian, or at least one track with no
+# evidence either way) but which track (if any) is genuinely Castellano
+# can't be determined from metadata; needs listening, not hunting.
 castilian_status() {
     local file="$1"
-    local tracks n chosen track_title check_text
+    local tracks t ietf title lang chosen="" positive=0 all_latam=1
     tracks=$(mkvmerge -J "$file" 2>/dev/null | jq -c '
       .tracks[]?
       | select(.type == "audio")
       | select((.properties.language // "" | ascii_downcase) == "spa")
-      | {id, lang: (.properties.language // ""), title: (.properties.track_name // "")}
+      | {id, lang: (.properties.language // ""), ietf: (.properties.language_ietf // ""), title: (.properties.track_name // "")}
     ' 2>/dev/null)
     [[ -z "$tracks" ]] && return 1
-    n=$(echo "$tracks" | wc -l)
-    if [[ "$n" -gt 1 ]]; then
-        chosen=$(echo "$tracks" | jq -c --arg pat "$CASTILIAN_PATTERN" 'select(.title | test($pat; "i"))' | head -1)
-        [[ -z "$chosen" ]] && return 2
-        tracks="$chosen"
-    fi
-    track_title=$(echo "$tracks" | jq -r '.title')
-    check_text="$track_title $(echo "$tracks" | jq -r '.lang')"
-    echo "$check_text" | grep -qiE "$LATAM_PATTERN" && return 1
-    return 0
+    while IFS= read -r t; do
+        ietf=$(jq -r '.ietf' <<<"$t")
+        title=$(jq -r '.title' <<<"$t")
+        lang=$(jq -r '.lang' <<<"$t")
+        if track_is_castilian "$ietf" "$title" "$lang"; then
+            positive=$((positive+1))
+            chosen="$t"
+        elif ! track_is_definitely_latam "$ietf" "$title" "$lang"; then
+            all_latam=0
+        fi
+    done <<<"$tracks"
+    [[ "$positive" -eq 1 ]] && return 0
+    [[ "$positive" -eq 0 && "$all_latam" -eq 1 ]] && return 1
+    return 2
 }
 
 archive_path_for() {

@@ -71,6 +71,34 @@
 # Read-only audit: reports every show/movie in the library still missing
 # Castilian audio on some or all of its files -- 2026-09-04
 !castilian-coverage-report.sh
+# Whisper-transcript-based Castilian/Latin-American classifier -- the
+# content-based fallback for files whose metadata gives no dialect signal
+# at all (the "und" + generic "[Spa]" title case). Three pieces: extracts
+# a clip (local ffmpeg), transcribes it (remote whisper-server over
+# Tailscale), classifies the transcript via grammar/vocabulary markers
+# (local, free) -- 2026-09-08
+!castilian-speech-patterns.sh
+!castilian-extract-clip.sh
+!castilian-linguistic-classify.sh
+!castilian-whisper-check.sh
+# Verified duration-mismatch alignment engine (English-track correlation
+# via numpy FFT, black-frame fallback, silence-snapped correction) --
+# 2026-09-09. No secrets (WHISPER_SERVER_URL defaults to an internal
+# Tailscale-only address, not reachable outside the tailnet).
+!castilian-audio-align.py
+# Content-verified episode re-matcher -- built the same night episode-
+# number matching turned out unreliable for shows with regional dub-
+# numbering divergence (Courage the Cowardly Dog: DVD order, not aired
+# order). Imports castilian-audio-align.py directly rather than
+# duplicating its correlation/transcript logic. SONARR_URL/SONARR_KEY
+# read from environment, no secrets in the file itself -- 2026-09-10.
+!castilian-episode-match.py
+# Hand-verified Spanish-dub-numbering -> aired-episode-numbering map for
+# Courage the Cowardly Dog, built from TheTVDB's public "Alternate DVD
+# Order" pages (no login/API key needed) and confirmed against real
+# audio/transcript content across all 4 seasons -- pure data, no
+# secrets, 2026-09-10.
+!castilian-dvd-order-map.json
 # Immich OBS-album membership sync, bjtn crontab (2026-09-02). API key is
 # NOT in this file -- passed inline via crontab's env prefix, same
 # treatment as the Sonarr/Radarr keys in arr-cutoff-search.sh's history.

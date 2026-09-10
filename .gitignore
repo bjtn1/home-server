@@ -103,6 +103,11 @@
 # NOT in this file -- passed inline via crontab's env prefix, same
 # treatment as the Sonarr/Radarr keys in arr-cutoff-search.sh's history.
 !obs-album-sync.py
+# Rescans Nextcloud's file-cache index against the real filesystem for
+# bjtn (occ files:scan), triggered by the new nextcloud-files-scan Jenkins
+# job. No secrets -- talks to the nextcloud container via `docker exec`,
+# no API key needed (2026-09-10).
+!nextcloud-files-scan.sh
 !/.gitleaks.toml
 !/.gitleaks-baseline.json
 !/.githooks/

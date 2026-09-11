@@ -200,7 +200,7 @@ search.bjtn.xyz {
 
 castilian.bjtn.xyz {
   import porkbun_tls
-  reverse_proxy castilian-control:8768
+  reverse_proxy castilian-review:8768
 }
 
 jenkins.bjtn.xyz {

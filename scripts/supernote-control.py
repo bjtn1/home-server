@@ -7,7 +7,7 @@ Normally runs nightly via bjtn's crontab; this is a supplement for
 "I just wrote a note and want the PDF now" without waiting for the cron.
 
 Runs directly on the host (not containerized) as bjtn's own systemd --user
-service -- unlike arr-control/castilian-control, this script does
+service -- unlike arr-control/castilian-review, this script does
 `docker exec ... nextcloud php occ files:scan`, which needs real Docker
 daemon access. Containerizing it would mean mounting /var/run/docker.sock
 into a new container just for this one button -- effectively

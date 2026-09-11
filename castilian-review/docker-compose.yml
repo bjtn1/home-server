@@ -1,7 +1,7 @@
 services:
-  castilian-control:
+  castilian-review:
     build: .
-    container_name: castilian-control
+    container_name: castilian-review
     restart: unless-stopped
     user: "1000:1000"
     env_file:

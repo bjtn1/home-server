@@ -99,6 +99,16 @@
 # audio/transcript content across all 4 seasons -- pure data, no
 # secrets, 2026-09-10.
 !castilian-dvd-order-map.json
+# Full metadata-only Castilian/not-Castilian/ambiguous sweep of the whole
+# TV+movies library -- run on demand via the Jenkins "castilian-scan" job
+# (renamed 2026-09-11 from "castilian-pipeline", which ran the drop-zone
+# pipeline above instead; that automation isn't preserved elsewhere).
+# Confirmed-not-Castilian files are staged + Sonarr/Radarr synced
+# automatically; anything metadata can't decide goes to castilian-review
+# for a human call -- no Whisper/content verification step at all.
+# SONARR_URL/SONARR_KEY, RADARR_URL/RADARR_KEY read from environment, no
+# secrets in the file itself -- 2026-09-11.
+!castilian-scan.py
 # Immich OBS-album membership sync, bjtn crontab (2026-09-02). API key is
 # NOT in this file -- passed inline via crontab's env prefix, same
 # treatment as the Sonarr/Radarr keys in arr-cutoff-search.sh's history.

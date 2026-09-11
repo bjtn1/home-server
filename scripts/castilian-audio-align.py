@@ -35,7 +35,7 @@ path must never serve an outdated fix):
                                extracted FROM corrected.mka -- if fix_found
 
 Never mixes anything into the real library. Only ever writes into the
-cache dir above; castilian-control reads that, a human approves via
+cache dir above; castilian-review reads that, a human approves via
 /review-duration, and the actual mux happens via mux-castilian-audio.sh's
 --override-pairs on a later, completely separate run.
 """

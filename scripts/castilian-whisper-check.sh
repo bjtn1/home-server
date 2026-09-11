@@ -20,7 +20,7 @@
 #                        (any verdict, 0-3) writes a permanent record
 #                        here: <hash>.verdict, <hash>.transcript.log,
 #                        <hash>.json (source path/audio idx/timestamp).
-#                        The castilian-control review page reads from
+#                        The castilian-review review page reads from
 #                        here, and writes <hash>.human_verdict.json when
 #                        a person gives their final call -- checked
 #                        FIRST, before anything else, and wins outright
@@ -145,7 +145,7 @@ BEST_SNIPPET_WORDS=0
 # development/testing into the script itself, so every actual
 # production run leaves a record (verdict + full transcript + source
 # path), not just ones I happened to be testing with. This is what
-# castilian-control's review page (built the same day) lists both its
+# castilian-review's review page (built the same day) lists both its
 # UNRESOLVED and CONFIRMED buckets from -- it never re-derives anything,
 # it reads these files directly.
 #
@@ -161,7 +161,7 @@ mkdir -p "$CACHE_DIR" 2>/dev/null
 RESOLVED_VIDEO="$(readlink -f -- "$VIDEO" 2>/dev/null || echo "$VIDEO")"
 CACHE_KEY="$(printf '%s::%s' "$RESOLVED_VIDEO" "$AUDIO_IDX" | sha256sum | cut -d' ' -f1)"
 
-# Human override (2026-09-08) -- if castilian-control's review page has
+# Human override (2026-09-08) -- if castilian-review's review page has
 # already recorded a person's final call for this exact source+track,
 # that wins outright, checked before anything else below (including the
 # ordinary decisive-cache-skip right after this) -- a human's explicit
@@ -414,14 +414,14 @@ fi
 # both hallucinations above from becoming wrong shipped verdicts, and
 # that stays true regardless of which model sits behind this call.
 # ANTHROPIC_API_KEY -- normally just an inherited env var (set by whoever
-# invokes this script, or by castilian-control's container env_file when
-# run that way). Also checked directly against castilian-control/.env as
+# invokes this script, or by castilian-review's container env_file when
+# run that way). Also checked directly against castilian-review/.env as
 # a fallback, so a standalone/cron/manual invocation on the host (no
 # container involved at all) picks up the same key without needing it
 # exported separately -- avoids a single secret needing to be maintained
 # in two places.
-if [[ -z "${ANTHROPIC_API_KEY:-}" && -f "$SCRIPT_DIR/../castilian-control/.env" ]]; then
-    ANTHROPIC_API_KEY=$(grep -m1 '^ANTHROPIC_API_KEY=' "$SCRIPT_DIR/../castilian-control/.env" | cut -d= -f2-)
+if [[ -z "${ANTHROPIC_API_KEY:-}" && -f "$SCRIPT_DIR/../castilian-review/.env" ]]; then
+    ANTHROPIC_API_KEY=$(grep -m1 '^ANTHROPIC_API_KEY=' "$SCRIPT_DIR/../castilian-review/.env" | cut -d= -f2-)
 fi
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
 ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-claude-sonnet-5}"

@@ -24,7 +24,7 @@
 #                           reason} -- one entry per source file, action is
 #                           mux/skip/fail -- alongside the normal log
 #                           output. Same info, just structured; used by
-#                           castilian-control's match-preview UI.
+#                           castilian-review's match-preview UI.
 #   --override-pairs=<path> TSV (source_path<TAB>target_path), TV mode
 #                           only: process these exact pairs first (full
 #                           safety checks still apply), excluding both
@@ -66,7 +66,7 @@ DURATION_TOLERANCE=3   # seconds
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/castilian-patterns.sh"
 
 # 2026-09-08, found live: a batch of 20 files a human had explicitly
-# reviewed and approved on the castilian-control review page came back "0
+# reviewed and approved on the castilian-review review page came back "0
 # muxed" -- this script's track_is_castilian() below is metadata-only, and
 # never had any awareness of castilian-whisper-check.sh or the human-
 # override cache the review page writes to, unlike castilian-drop-scan.sh's
@@ -102,7 +102,7 @@ for a in "$@"; do
         --dry-run) DRY_RUN=1 ;;
         --movie)   MOVIE_MODE=1 ;;
         # 2026-09-08, "manual matching" feature: --json-out gives
-        # castilian-control's preview UI a structured, per-pair record of
+        # castilian-review's preview UI a structured, per-pair record of
         # what would happen (and why) instead of having to regex-parse
         # free-text log lines -- same information, just also machine-
         # readable. --override-pairs lets a human redirect a specific

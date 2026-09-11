@@ -213,7 +213,7 @@ cmd_run() {
 }
 
 # Marks any RUNNING row STOPPED. Pure state -- doesn't touch the actual OS
-# process (something else, e.g. castilian-control, has to have already
+# process (something else, e.g. castilian-review, has to have already
 # killed it); this just stops self-heal from treating it as a crash and
 # auto-retrying it on the next `run`. Safe to call anytime, including when
 # nothing is running.
@@ -271,7 +271,7 @@ cmd_resume() {
 # a standing source/target pair (e.g. a drop-zone directory that gets
 # re-checked periodically), "done" doesn't mean "never look at this again":
 # new files may have arrived, or a human may have just approved a specific
-# override (see castilian-control's duration-review page) that's worth
+# override (see castilian-review's duration-review page) that's worth
 # picking up on the next run. Cheap either way, same reasoning as
 # cmd_resume's own comment: mux-castilian-audio.sh's own process_pair()
 # skips anything that doesn't actually need touching.
@@ -291,7 +291,7 @@ cmd_requeue() {
 # 2026-09-08, "manual matching" feature: prints the JSON array
 # mux-castilian-audio.sh's --json-out produces for one job's (source,
 # target) pair, run in --dry-run so nothing on disk changes -- this is
-# what castilian-control's preview UI calls to show every proposed pairing
+# what castilian-review's preview UI calls to show every proposed pairing
 # (and why) before a human approves the job to actually run. Picks up the
 # same per-job override file cmd_run does, so the preview reflects
 # whatever's already been manually set.

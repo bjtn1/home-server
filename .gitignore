@@ -47,62 +47,18 @@
 !disk-io-watchdog.sh
 !disk-io-watchdog-resolved.sh
 !disk-io-watchdog.conf
-# Sonarr/Radarr On Import custom script -- flags Latin-American/neutral
-# Spanish audio tracks that slip past the release-title-only custom format,
-# 2026-09-03
-!arr-audio-lang-check.sh
-# Muxes a Castilian Spanish audio track from a separately-downloaded release
-# into existing library files in place, 2026-09-03
-!mux-castilian-audio.sh
-# Work queue for pulling Castilian releases from MEGA and handing them off
-# to mux-castilian-audio.sh, 2026-09-03
-!castilian-queue.sh
-# Shared LATAM_PATTERN/CASTILIAN_PATTERN constants, sourced by the three
-# scripts above so they can't drift out of sync with each other, 2026-09-04
+# Shared LATAM_PATTERN/CASTILIAN_PATTERN constants, sourced by
+# castilian-scan.py so it can't drift out of sync with the rest of this
+# project's Castilian-dialect detection, 2026-09-04
 !castilian-patterns.sh
-# Archives Castilian audio tracks out of library files into a standalone,
-# restic-backed audio-only archive so they never have to be re-hunted from
-# MEGA if a library file is ever replaced, 2026-09-04
-!archive-castilian-audio.sh
-# Drop-folder auto-pipeline: scans a drop zone, detects/extracts genuinely
-# Castilian tracks, matches them to owned Sonarr/Radarr library items via
-# live lookup, and hands off to castilian-queue.sh -- 2026-09-04
-!castilian-drop-scan.sh
-# Read-only audit: reports every show/movie in the library still missing
-# Castilian audio on some or all of its files -- 2026-09-04
-!castilian-coverage-report.sh
-# Whisper-transcript-based Castilian/Latin-American classifier -- the
-# content-based fallback for files whose metadata gives no dialect signal
-# at all (the "und" + generic "[Spa]" title case). Three pieces: extracts
-# a clip (local ffmpeg), transcribes it (remote whisper-server over
-# Tailscale), classifies the transcript via grammar/vocabulary markers
-# (local, free) -- 2026-09-08
-!castilian-speech-patterns.sh
+# Extracts a short clip from one audio track (local ffmpeg) for
+# castilian-review's snippet playback -- 2026-09-08
 !castilian-extract-clip.sh
-!castilian-linguistic-classify.sh
-!castilian-whisper-check.sh
-# Verified duration-mismatch alignment engine (English-track correlation
-# via numpy FFT, black-frame fallback, silence-snapped correction) --
-# 2026-09-09. No secrets (WHISPER_SERVER_URL defaults to an internal
-# Tailscale-only address, not reachable outside the tailnet).
-!castilian-audio-align.py
-# Content-verified episode re-matcher -- built the same night episode-
-# number matching turned out unreliable for shows with regional dub-
-# numbering divergence (Courage the Cowardly Dog: DVD order, not aired
-# order). Imports castilian-audio-align.py directly rather than
-# duplicating its correlation/transcript logic. SONARR_URL/SONARR_KEY
-# read from environment, no secrets in the file itself -- 2026-09-10.
-!castilian-episode-match.py
-# Hand-verified Spanish-dub-numbering -> aired-episode-numbering map for
-# Courage the Cowardly Dog, built from TheTVDB's public "Alternate DVD
-# Order" pages (no login/API key needed) and confirmed against real
-# audio/transcript content across all 4 seasons -- pure data, no
-# secrets, 2026-09-10.
-!castilian-dvd-order-map.json
 # Full metadata-only Castilian/not-Castilian/ambiguous sweep of the whole
 # TV+movies library -- run on demand via the Jenkins "castilian-scan" job
-# (renamed 2026-09-11 from "castilian-pipeline", which ran the drop-zone
-# pipeline above instead; that automation isn't preserved elsewhere).
+# (renamed 2026-09-11 from "castilian-pipeline", which ran a since-retired
+# drop-zone/mux/Whisper pipeline instead -- that automation, and the
+# scripts it depended on, were removed 2026-09-11 as no longer used).
 # Confirmed-not-Castilian files are staged + Sonarr/Radarr synced
 # automatically; anything metadata can't decide goes to castilian-review
 # for a human call -- no Whisper/content verification step at all.

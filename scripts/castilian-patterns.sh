@@ -1,11 +1,14 @@
 # Shared regex constants for telling Castilian (European) Spanish audio
-# apart from Latin-American/neutral Spanish, sourced by mux-castilian-audio.sh,
-# arr-audio-lang-check.sh, and archive-castilian-audio.sh so the three bash
-# copies can't independently drift out of sync with each other (2026-09-04 --
-# pulled out after an unrelated drift, the Sonarr/Radarr cutoffFormatScore
-# issue, caused real problems the same night this was written).
+# apart from Latin-American/neutral Spanish. Originally sourced by three
+# bash scripts (mux-castilian-audio.sh, arr-audio-lang-check.sh,
+# archive-castilian-audio.sh -- pulled out 2026-09-04 after an unrelated
+# drift, the Sonarr/Radarr cutoffFormatScore issue, caused real problems
+# the same night this was written); all three were removed 2026-09-11 as
+# no longer used, leaving castilian-scan.py (which sources this same file
+# via a `bash -c` subprocess, not a bash `source`, but the same
+# never-drift reasoning applies) as the only consumer.
 #
-# A 4th copy of this same regex lives in the "Spanish Audio" custom format
+# A 2nd copy of this same regex lives in the "Spanish Audio" custom format
 # in Sonarr/Radarr itself (release-title matching) -- that one can't source
 # a bash file (it's stored in their DB via API), so it stays manually
 # synced. If you change these patterns, update that custom format too.

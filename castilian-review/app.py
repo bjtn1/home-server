@@ -212,9 +212,23 @@ def write_human_verdict(key: str, verdict: str, undo: dict = None) -> None:
 
 def list_review_entries() -> list:
     # Scans every <key>.json castilian-whisper-check.sh (or the library
-    # audit) has ever written and pairs each with its human_verdict, if
-    # any. Only UNRESOLVED verdicts (2/3) are returned -- CONFIRMED
-    # tracks (0/1) are never surfaced here (see this module's docstring).
+    # audit) has ever written. Only UNRESOLVED verdicts (2/3) with NO
+    # human_verdict yet are returned -- CONFIRMED tracks (0/1) are never
+    # surfaced here (see this module's docstring), and neither is anything
+    # a human (or an automated backfill pass) has already resolved.
+    #
+    # The `data.get("verdict") not in (2, 3)` check alone used to be
+    # trusted as equivalent to "still needs review", because the only way
+    # an entry ever got resolved was a click on THIS page within the same
+    # session -- which called refresh() right after, so a resolved entry
+    # never lingered. That assumption broke the day a bulk backfill script
+    # resolved ~1,800 entries outside the page's own click flow: their
+    # original verdict field never changes (nothing rewrites it), so they
+    # kept passing this check and got shipped to the browser anyway --
+    # 2,295 entries instead of ~500, hanging the page trying to render
+    # that many cards in one innerHTML assignment. Excluding anything with
+    # a human_verdict already recorded, however it got resolved, is what
+    # this function's own docstring already claimed it did.
     entries = []
     try:
         names = os.listdir(VERDICT_CACHE_DIR)
@@ -233,8 +247,11 @@ def list_review_entries() -> list:
             continue
         if data.get("verdict") not in (2, 3):
             continue
+        human_verdict = read_human_verdict(key)
+        if human_verdict is not None:
+            continue
         data["key"] = key
-        data["human_verdict"] = read_human_verdict(key)
+        data["human_verdict"] = human_verdict
         entries.append(data)
     entries.sort(key=lambda e: e.get("checked_at", ""), reverse=True)
     return entries

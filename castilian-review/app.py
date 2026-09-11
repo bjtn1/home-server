@@ -149,26 +149,80 @@ function cardHTML(e) {
   </div>`;
 }
 
+// Renders only a small batch of cards at a time instead of the whole
+// list -- iOS Safari treats every <audio> element as a real media-player
+// instance (even with preload="none"), not just a cheap DOM node, so
+// hundreds of them alive at once is what was actually making this slow
+// on a phone. The full list (just JSON, ~200KB) is still fetched once up
+// front into `queue`; only BATCH_SIZE of those ever exist as real DOM
+// elements simultaneously, refilled one at a time as each is resolved.
+const BATCH_SIZE = 10;
+let queue = [];
+
+function updateCount() {
+  document.getElementById('count').textContent =
+    `(${document.getElementById('list').children.length + queue.length})`;
+}
+
+function fillBatch() {
+  const list = document.getElementById('list');
+  while (list.children.length < BATCH_SIZE && queue.length) {
+    list.insertAdjacentHTML('beforeend', cardHTML(queue.shift()));
+  }
+  document.getElementById('empty').hidden = list.children.length !== 0;
+  updateCount();
+}
+
+function markDone(key, verdict) {
+  const card = document.getElementById('card-' + key);
+  if (!card) return;
+  card.classList.add('done');
+  const label = verdict === 'castilian' ? 'You said: CASTILIAN' : 'You said: NOT CASTILIAN';
+  const cls = verdict === 'castilian' ? '' : 'no';
+  card.querySelector('.actions').innerHTML =
+    `<span class="reviewed-note ${cls}">${label} &mdash; <a href="#" onclick="undoVerdict('${key}');return false;">undo</a></span>`;
+}
+
 async function setVerdict(key, verdict) {
+  // Optimistic + local: no re-fetch of the whole list, no full DOM
+  // rebuild -- just this one card updates immediately, then quietly
+  // drops out and the next queued card slides in, same as before but
+  // without ever touching the other ~9 visible cards.
+  markDone(key, verdict);
   try {
     await fetch('/review-verdict/' + key, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({verdict}),
     });
   } catch (e) {}
-  refresh();
+  setTimeout(() => {
+    const card = document.getElementById('card-' + key);
+    if (card) card.remove();
+    fillBatch();
+  }, 700);
 }
 
-async function refresh() {
+async function undoVerdict(key) {
+  try {
+    await fetch('/review-verdict/' + key, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({verdict: 'clear'}),
+    });
+  } catch (e) {}
+  const card = document.getElementById('card-' + key);
+  if (card) card.remove();
+  fillBatch();
+}
+
+async function init() {
   let rows;
   try {
     rows = await fetch('/review-list.json').then(r => r.json());
   } catch (e) { return; }
-  document.getElementById('count').textContent = `(${rows.length})`;
-  document.getElementById('list').innerHTML = rows.map(cardHTML).join('');
-  document.getElementById('empty').hidden = rows.length !== 0;
+  queue = rows;
+  fillBatch();
 }
-refresh();
+init();
 </script>
 </body>
 </html>"""

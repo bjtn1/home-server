@@ -208,6 +208,11 @@ remove.bjtn.xyz {
   reverse_proxy media-remove:8769
 }
 
+stage.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy stage-control:8770
+}
+
 jenkins.bjtn.xyz {
   import porkbun_tls
   reverse_proxy jenkins:8080

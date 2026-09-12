@@ -1,0 +1,16 @@
+services:
+  media-remove:
+    build: .
+    container_name: media-remove
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file:
+      - .env
+    volumes:
+      - /mnt/vault:/mnt/vault
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

@@ -203,6 +203,11 @@ castilian.bjtn.xyz {
   reverse_proxy castilian-review:8768
 }
 
+remove.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy media-remove:8769
+}
+
 jenkins.bjtn.xyz {
   import porkbun_tls
   reverse_proxy jenkins:8080

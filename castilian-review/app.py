@@ -74,9 +74,14 @@ VERDICT_CACHE_DIR = os.environ.get(
 # -appropriate duration instead of the classifier's own longer clips.
 REVIEW_SNIPPET_DUR = "25"
 REVIEW_SNIPPET_START_PCT = "0.30"
+# Re-roll rotation -- spread across the episode rather than random, so
+# repeated re-rolls actually sample different stretches instead of
+# risking landing on the same quiet spot twice by chance.
+REVIEW_REROLL_OFFSETS = [0.10, 0.25, 0.40, 0.55, 0.70, 0.85]
 REVIEW_KEY_RE = re.compile(r"^[0-9a-f]{64}$")
 REVIEW_AUDIO_PATH_RE = re.compile(r"^/review-audio/([0-9a-f]{64})$")
 REVIEW_VERDICT_PATH_RE = re.compile(r"^/review-verdict/([0-9a-f]{64})$")
+REVIEW_REROLL_PATH_RE = re.compile(r"^/review-reroll/([0-9a-f]{64})$")
 
 
 REVIEW_PAGE = """<!doctype html>
@@ -108,6 +113,8 @@ REVIEW_PAGE = """<!doctype html>
                      cursor: pointer; font-weight: 600; }
   .yes { background: #2f7d4a; color: white; }
   .no { background: #a03636; color: white; }
+  .reroll { background: #333; color: #ddd; }
+  .showall { background: #2c4a6e; color: white; }
   .reviewed-note { font-size: 0.78rem; color: #8fd98f; }
   .reviewed-note.no { color: #e08a8a; }
   #empty { color: #666; font-size: 0.85rem; }
@@ -138,12 +145,22 @@ function cardHTML(e) {
     const cls = e.human_verdict.verdict === 'castilian' ? '' : 'no';
     note = `<span class="reviewed-note ${cls}">${label} &mdash; <a href="#" onclick="setVerdict('${e.key}','clear');return false;">undo</a></span>`;
   }
-  return `<div class="card ${done ? 'done' : ''}" id="card-${e.key}">
+  // show_or_movie is arbitrary text (a folder name), not a safe-to-inline
+  // hex key like the rest of these onclick handlers -- it goes into a
+  // data attribute instead, read by a delegated click listener below,
+  // rather than risking quote/escaping bugs interpolating it straight
+  // into an inline onclick string.
+  const showAll = e.show_or_movie
+    ? `<button class="showall" data-action="markshow" data-show="${esc(e.show_or_movie)}">Mark all "${esc(e.show_or_movie)}" as Castilian</button>`
+    : '';
+  return `<div class="card ${done ? 'done' : ''}" id="card-${e.key}" data-show="${esc(e.show_or_movie || '')}">
     <div class="fname">${esc(e.basename)}${badge}</div>
     <audio controls preload="none" src="/review-audio/${e.key}"></audio>
     <div class="actions">
       <button class="yes" onclick="setVerdict('${e.key}','castilian')">&#9989; Castilian</button>
       <button class="no" onclick="setVerdict('${e.key}','not_castilian')">&#10060; Not Castilian</button>
+      <button class="reroll" onclick="rerollSnippet('${e.key}')">&#128257; Re-roll snippet</button>
+      ${showAll}
       ${note}
     </div>
   </div>`;
@@ -213,6 +230,56 @@ async function undoVerdict(key) {
   if (card) card.remove();
   fillBatch();
 }
+
+async function rerollSnippet(key) {
+  const card = document.getElementById('card-' + key);
+  if (!card) return;
+  const btn = card.querySelector('.reroll');
+  const audio = card.querySelector('audio');
+  if (btn) { btn.disabled = true; btn.textContent = 'Re-rolling...'; }
+  try {
+    await fetch('/review-reroll/' + key, { method: 'POST' });
+  } catch (e) {}
+  if (audio) {
+    // Same URL as before (preload="none" means nothing was cached to
+    // invalidate) but a cache-busting query string just in case the
+    // browser itself cached the audio response despite Cache-Control --
+    // then .load() so the <audio> element actually re-fetches instead of
+    // keeping whatever it had already decoded.
+    audio.src = '/review-audio/' + key + '?v=' + Date.now();
+    audio.load();
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '&#128257; Re-roll snippet'; }
+}
+
+async function markShow(show) {
+  if (!confirm(`Mark ALL unresolved tracks for "${show}" as Castilian?`)) return;
+  let result;
+  try {
+    result = await fetch('/review-mark-show', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({show_or_movie: show}),
+    }).then(r => r.json());
+  } catch (e) { alert('Failed to mark show -- see console.'); return; }
+  // Drop every card for this show from both the visible batch and the
+  // not-yet-rendered queue, then refill -- otherwise already-fetched
+  // entries for this show would still show up as if still unresolved.
+  document.querySelectorAll('.card').forEach(card => {
+    if (card.dataset.show === show) card.remove();
+  });
+  queue = queue.filter(e => e.show_or_movie !== show);
+  fillBatch();
+  alert(`Marked ${result.marked} track(s) for "${show}" as Castilian` +
+        (result.failed ? ` (${result.failed} failed)` : '') + '.');
+}
+
+// Delegated listener for the "mark whole show" button -- the show name
+// is arbitrary text read from a data attribute, not inlined into an
+// onclick string (see cardHTML()'s own comment for why).
+document.getElementById('list').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-action="markshow"]');
+  if (btn) markShow(btn.dataset.show);
+});
 
 async function init() {
   let rows;
@@ -312,11 +379,14 @@ def list_review_entries() -> list:
 
 
 def ensure_review_snippet(key: str) -> "str | None":
-    # Extracts once, cached forever after (a track's audio doesn't
-    # change). Prefers the offset of whichever real transcription attempt
-    # had the MOST words (proof of substantial spoken dialogue, not noise
-    # or silence) when castilian-whisper-check.sh recorded one; falls back
-    # to a fixed default otherwise.
+    # Extracts once, cached until a re-roll (see reroll_review_snippet())
+    # deletes the cached file and advances review_offset_idx -- a track's
+    # audio doesn't change on its own, so nothing else should invalidate
+    # this cache. Offset preference, highest priority first: an explicit
+    # re-roll request (review_offset_idx), then whichever real
+    # transcription attempt had the MOST words when castilian-whisper-
+    # check.sh recorded one (good_snippet_offset -- proof of substantial
+    # spoken dialogue, not noise or silence), then a fixed default.
     entry_path = os.path.join(VERDICT_CACHE_DIR, f"{key}.json")
     try:
         with open(entry_path) as f:
@@ -326,7 +396,12 @@ def ensure_review_snippet(key: str) -> "str | None":
     snippet_path = _snippet_path(key)
     if os.path.exists(snippet_path) and os.path.getsize(snippet_path) > 0:
         return snippet_path
-    start_pct = str(data["good_snippet_offset"]) if "good_snippet_offset" in data else REVIEW_SNIPPET_START_PCT
+    if "review_offset_idx" in data:
+        start_pct = str(REVIEW_REROLL_OFFSETS[data["review_offset_idx"] % len(REVIEW_REROLL_OFFSETS)])
+    elif "good_snippet_offset" in data:
+        start_pct = str(data["good_snippet_offset"])
+    else:
+        start_pct = REVIEW_SNIPPET_START_PCT
     try:
         r = subprocess.run(
             [EXTRACT_CLIP_SCRIPT, data["source_path"], str(data["audio_idx"]),
@@ -338,6 +413,32 @@ def ensure_review_snippet(key: str) -> "str | None":
     except Exception:
         pass
     return None
+
+
+def reroll_review_snippet(key: str) -> str:
+    # Advances review_offset_idx to the next spot in REVIEW_REROLL_OFFSETS
+    # (persisted back into the entry's own cache file, so it survives a
+    # page reload) and deletes the cached clip so the next /review-audio
+    # request re-extracts at the new offset -- for a track whose current
+    # snippet landed on a quiet/musical stretch with little or no actual
+    # dialogue to judge by ear.
+    entry_path = os.path.join(VERDICT_CACHE_DIR, f"{key}.json")
+    try:
+        with open(entry_path) as f:
+            data = json.load(f)
+    except Exception:
+        return "couldn't re-roll (entry missing)"
+    current = data.get("review_offset_idx", -1)
+    data["review_offset_idx"] = (current + 1) % len(REVIEW_REROLL_OFFSETS)
+    with open(entry_path, "w") as f:
+        json.dump(data, f)
+    try:
+        os.remove(_snippet_path(key))
+    except FileNotFoundError:
+        pass
+    if ensure_review_snippet(key) is None:
+        return "re-rolled, but the new clip failed to extract"
+    return "re-rolled"
 
 
 def _collision_safe_move(src: str, dest_dir: str) -> str:
@@ -653,6 +754,78 @@ def undo_stage_for_deletion(undo: dict) -> str:
     return "; ".join(notes)
 
 
+def apply_verdict(key: str, verdict: str) -> str:
+    # The single place that actually applies a castilian/not_castilian/
+    # clear verdict to one track -- factored out of do_POST so the bulk
+    # "mark this whole show" endpoint can reuse the exact same tested
+    # logic (tagging, staging, arr sync, undo) instead of a second copy
+    # that could drift. Returns the human-readable result message; raises
+    # on a missing/unreadable entry rather than returning an error string,
+    # so a caller iterating many keys can tell "this one failed" apart
+    # from "this one succeeded but the file's gone" (already a normal,
+    # non-exceptional message from stage_for_deletion()/tag_castilian_track()).
+    entry_path = os.path.join(VERDICT_CACHE_DIR, f"{key}.json")
+    with open(entry_path) as f:
+        entry_data = json.load(f)
+    # Ground truth is where the file actually lives, not the "mode" tag --
+    # 18 pre-migration cache entries (created before the library_review
+    # mode existed) point at real files under /mnt/vault/tv or
+    # /mnt/vault/movies but have no mode field at all, which used to make
+    # them fall through to the drop-zone branch below and silently do
+    # nothing (or worse, get queued for muxing) instead of actually
+    # staging them.
+    source_path = entry_data.get("source_path", "")
+    is_library = entry_data.get("mode") == "library_review" or any(
+        source_path.startswith(root) for root in LIBRARY_ROOTS
+    )
+    if verdict == "clear":
+        # Lets a misclick or a changed mind be undone -- back to
+        # unreviewed, not to some other guessed state. Both library
+        # verdicts change something outside this cache entry
+        # (NOT_CASTILIAN moves the file + syncs arr, CASTILIAN tags the
+        # track's own metadata), so a plain status reset would silently
+        # leave that change in place -- dispatched by "kind" on the
+        # stored undo dict to whichever of undo_stage_for_deletion()/
+        # untag_castilian_track() actually reverses it.
+        prev = read_human_verdict(key)
+        undo_note = ""
+        if prev and prev.get("undo"):
+            if prev.get("verdict") == "not_castilian":
+                undo_note = " -- " + undo_stage_for_deletion(prev["undo"])
+            elif prev.get("verdict") == "castilian":
+                undo_note = " -- " + untag_castilian_track(prev["undo"])
+        try:
+            os.remove(_human_verdict_path(key))
+        except FileNotFoundError:
+            pass
+        return f"saved{undo_note}"
+    elif verdict == "castilian":
+        if is_library:
+            # Library file is already correctly sitting in /tv or /movies
+            # -- recording the verdict is the whole action; the only side
+            # effect is tagging the track's own metadata (see
+            # tag_castilian_track()), not moving anything.
+            tag_note, tag_undo = tag_castilian_track(source_path, entry_data.get("audio_idx", 0))
+            write_human_verdict(key, verdict, undo=tag_undo)
+            return f"saved -- kept in library -- {tag_note}"
+        else:
+            write_human_verdict(key, verdict)
+            note = queue_for_muxing(key)
+            return f"saved -- {note}"
+    else:
+        # not_castilian
+        if is_library:
+            note, undo = stage_for_deletion(key)
+            write_human_verdict(key, verdict, undo=undo)
+            return f"saved -- {note}"
+        else:
+            # Drop-zone source: the file is already correctly sitting in
+            # quarantine (drop-rejected/) -- recording the human call is
+            # the whole action, nothing to move.
+            write_human_verdict(key, verdict)
+            return "saved"
+
+
 class Handler(BaseHTTPRequestHandler):
     def _text(self, body: str, code=200):
         data = body.encode()
@@ -723,78 +896,48 @@ class Handler(BaseHTTPRequestHandler):
             if verdict not in ("castilian", "not_castilian", "clear"):
                 self._text("verdict must be 'castilian', 'not_castilian', or 'clear'", code=400)
                 return
-            entry_path = os.path.join(VERDICT_CACHE_DIR, f"{key}.json")
-            if not os.path.exists(entry_path):
+            if not os.path.exists(os.path.join(VERDICT_CACHE_DIR, f"{key}.json")):
                 self._text("no such track", code=404)
                 return
             try:
-                with open(entry_path) as f:
-                    entry_data = json.load(f)
-            except Exception:
-                entry_data = {}
-            # Ground truth is where the file actually lives, not the
-            # "mode" tag -- 18 pre-migration cache entries (created before
-            # the library_review mode existed) point at real files under
-            # /mnt/vault/tv or /mnt/vault/movies but have no mode field at
-            # all, which used to make them fall through to the drop-zone
-            # branch below and silently do nothing (or worse, get queued
-            # for muxing) instead of actually staging them.
-            source_path = entry_data.get("source_path", "")
-            is_library = entry_data.get("mode") == "library_review" or any(
-                source_path.startswith(root) for root in LIBRARY_ROOTS
-            )
-            try:
-                if verdict == "clear":
-                    # Lets a misclick or a changed mind be undone -- back
-                    # to unreviewed, not to some other guessed state. Both
-                    # library verdicts change something outside this cache
-                    # entry (NOT_CASTILIAN moves the file + syncs arr,
-                    # CASTILIAN tags the track's own metadata), so a plain
-                    # status reset would silently leave that change in
-                    # place -- dispatched by "kind" on the stored undo dict
-                    # to whichever of undo_stage_for_deletion()/
-                    # untag_castilian_track() actually reverses it.
-                    prev = read_human_verdict(key)
-                    undo_note = ""
-                    if prev and prev.get("undo"):
-                        if prev.get("verdict") == "not_castilian":
-                            undo_note = " -- " + undo_stage_for_deletion(prev["undo"])
-                        elif prev.get("verdict") == "castilian":
-                            undo_note = " -- " + untag_castilian_track(prev["undo"])
-                    try:
-                        os.remove(_human_verdict_path(key))
-                    except FileNotFoundError:
-                        pass
-                    self._text(f"saved{undo_note}")
-                elif verdict == "castilian":
-                    if is_library:
-                        # Library file is already correctly sitting in
-                        # /tv or /movies -- recording the verdict is the
-                        # whole action; the only side effect is tagging
-                        # the track's own metadata (see
-                        # tag_castilian_track()), not moving anything.
-                        tag_note, tag_undo = tag_castilian_track(source_path, entry_data.get("audio_idx", 0))
-                        write_human_verdict(key, verdict, undo=tag_undo)
-                        self._text(f"saved -- kept in library -- {tag_note}")
-                    else:
-                        write_human_verdict(key, verdict)
-                        note = queue_for_muxing(key)
-                        self._text(f"saved -- {note}")
-                else:
-                    # not_castilian
-                    if is_library:
-                        note, undo = stage_for_deletion(key)
-                        write_human_verdict(key, verdict, undo=undo)
-                        self._text(f"saved -- {note}")
-                    else:
-                        # Drop-zone source: the file is already correctly
-                        # sitting in quarantine (drop-rejected/) --
-                        # recording the human call is the whole action,
-                        # nothing to move.
-                        write_human_verdict(key, verdict)
-                        self._text("saved")
+                self._text(apply_verdict(key, verdict))
             except Exception as e:
                 self._text(f"failed to save: {e}", code=500)
+        elif (m := REVIEW_REROLL_PATH_RE.match(path)):
+            key = m.group(1)
+            if not os.path.exists(os.path.join(VERDICT_CACHE_DIR, f"{key}.json")):
+                self._text("no such track", code=404)
+                return
+            self._text(reroll_review_snippet(key))
+        elif path == "/review-mark-show":
+            # Bulk affordance for exactly the situation that prompted it:
+            # you recognize, from outside knowledge (owning the physical
+            # Castilian DVDs, say), that an entire show is genuinely
+            # Castilian even though its files don't carry the metadata to
+            # show it -- rather than clicking "Castilian" one episode at a
+            # time, mark every still-unresolved track for that show in one
+            # request. Reuses apply_verdict() per track, so each one gets
+            # the exact same tagging/undo treatment as a single manual
+            # click -- this is not a separate, less-tested code path.
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:
+                self._text("bad request body", code=400)
+                return
+            show = body.get("show_or_movie")
+            if not show:
+                self._text("show_or_movie is required", code=400)
+                return
+            matches = [e for e in list_review_entries() if e.get("show_or_movie") == show]
+            marked, failed = 0, 0
+            for e in matches:
+                try:
+                    apply_verdict(e["key"], "castilian")
+                    marked += 1
+                except Exception:
+                    failed += 1
+            self._json({"show_or_movie": show, "marked": marked, "failed": failed})
         else:
             self.send_response(404)
             self.end_headers()

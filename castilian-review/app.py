@@ -382,6 +382,26 @@ def list_review_entries() -> list:
         human_verdict = read_human_verdict(key)
         if human_verdict is not None:
             continue
+        # Self-cleaning: the file this entry points at can go missing
+        # without this page ever knowing -- Sonarr/Radarr replacing a
+        # release with a different one (deleting the old file in the
+        # process) is exactly what happened live, 2026-09-12, orphaning
+        # a handful of entries that could never be reviewed again (no
+        # audio to extract, /review-audio/<key> just 404s, showing as
+        # "error" trying to play in the browser). An unplayable entry
+        # isn't "unresolved needing your ear" anymore, it's just stale
+        # bookkeeping -- clean it up rather than keep serving it.
+        source_path = data.get("source_path")
+        if not source_path or not os.path.isfile(source_path):
+            try:
+                os.remove(os.path.join(VERDICT_CACHE_DIR, fname))
+            except FileNotFoundError:
+                pass
+            try:
+                os.remove(_snippet_path(key))
+            except FileNotFoundError:
+                pass
+            continue
         data["key"] = key
         data["human_verdict"] = human_verdict
         entries.append(data)

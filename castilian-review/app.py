@@ -176,17 +176,22 @@ function cardHTML(e) {
 const BATCH_SIZE = 10;
 let queue = [];
 
+function activeCount() {
+  return document.getElementById('list').querySelectorAll('.card:not(.done)').length;
+}
+
 function updateCount() {
-  document.getElementById('count').textContent =
-    `(${document.getElementById('list').children.length + queue.length})`;
+  document.getElementById('count').textContent = `(${activeCount() + queue.length})`;
 }
 
 function fillBatch() {
   const list = document.getElementById('list');
-  while (list.children.length < BATCH_SIZE && queue.length) {
+  let need = BATCH_SIZE - activeCount();
+  while (need > 0 && queue.length) {
     list.insertAdjacentHTML('beforeend', cardHTML(queue.shift()));
+    need--;
   }
-  document.getElementById('empty').hidden = list.children.length !== 0;
+  document.getElementById('empty').hidden = activeCount() !== 0;
   updateCount();
 }
 
@@ -198,13 +203,23 @@ function markDone(key, verdict) {
   const cls = verdict === 'castilian' ? '' : 'no';
   card.querySelector('.actions').innerHTML =
     `<span class="reviewed-note ${cls}">${label} &mdash; <a href="#" onclick="undoVerdict('${key}');return false;">undo</a></span>`;
+  // A resolved card stays on screen indefinitely (undo always available,
+  // however long you take to notice a misclick -- a 700ms auto-remove
+  // timer used to erase it before there was any real chance to react),
+  // but no longer needs to actually play audio -- dropping the <audio>
+  // element frees the per-instance cost a real media player carries
+  // (iOS Safari especially, see BATCH_SIZE's own comment above), so a
+  // long review session doesn't quietly pile back up to dozens of live
+  // players just because their cards never get removed anymore.
+  const audio = card.querySelector('audio');
+  if (audio) audio.remove();
 }
 
 async function setVerdict(key, verdict) {
   // Optimistic + local: no re-fetch of the whole list, no full DOM
-  // rebuild -- just this one card updates immediately, then quietly
-  // drops out and the next queued card slides in, same as before but
-  // without ever touching the other ~9 visible cards.
+  // rebuild -- this one card updates and stays in place, and the next
+  // queued card is added alongside it immediately (fillBatch only counts
+  // still-active, not-done cards against BATCH_SIZE -- see activeCount()).
   markDone(key, verdict);
   try {
     await fetch('/review-verdict/' + key, {
@@ -212,11 +227,7 @@ async function setVerdict(key, verdict) {
       body: JSON.stringify({verdict}),
     });
   } catch (e) {}
-  setTimeout(() => {
-    const card = document.getElementById('card-' + key);
-    if (card) card.remove();
-    fillBatch();
-  }, 700);
+  fillBatch();
 }
 
 async function undoVerdict(key) {

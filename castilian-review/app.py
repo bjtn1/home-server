@@ -56,6 +56,10 @@ SONARR_URL = os.environ.get("SONARR_URL")
 SONARR_KEY = os.environ.get("SONARR_KEY")
 RADARR_URL = os.environ.get("RADARR_URL")
 RADARR_KEY = os.environ.get("RADARR_KEY")
+JELLYFIN_URL = os.environ.get("JELLYFIN_URL")
+JELLYFIN_KEY = os.environ.get("JELLYFIN_KEY")
+JELLYSEERR_URL = os.environ.get("JELLYSEERR_URL")
+JELLYSEERR_KEY = os.environ.get("JELLYSEERR_KEY")
 # Where a track marked NOT_CASTILIAN gets moved to (library sources only).
 LIBRARY_STAGING_DIR = os.environ.get("CASTILIAN_STAGING_DIR", "/mnt/vault/staged-for-deletion")
 LIBRARY_ROOTS = {
@@ -536,6 +540,47 @@ def _arr_request(base_url, api_key, method, path, data=None):
         return {"_error": str(e)}
 
 
+def _jellyfin_request(method, path, extra_qs=""):
+    if not JELLYFIN_URL or not JELLYFIN_KEY:
+        return {"_error": "JELLYFIN_URL/KEY not configured"}
+    sep = "&" if "?" in path else "?"
+    url = f"{JELLYFIN_URL.rstrip('/')}{path}{sep}api_key={JELLYFIN_KEY}{extra_qs}"
+    req = urllib.request.Request(url, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else {}
+    except Exception as e:
+        return {"_error": str(e)}
+
+
+def _jellyseerr_request(method, path, data=None):
+    if not JELLYSEERR_URL or not JELLYSEERR_KEY:
+        return {"_error": "JELLYSEERR_URL/KEY not configured"}
+    url = f"{JELLYSEERR_URL.rstrip('/')}{path}"
+    body = json.dumps(data).encode() if data is not None else None
+    req = urllib.request.Request(url, data=body, method=method, headers={
+        "X-Api-Key": JELLYSEERR_KEY, "Content-Type": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else {}
+    except Exception as e:
+        return {"_error": str(e)}
+
+
+def find_jellyseerr_media_id(tmdb_id, media_kind):
+    # media_kind: "movie" or "tv" -- Jellyseerr's whole data model keys
+    # off TMDB ids even for TV (not TVDB); Sonarr's own series object
+    # already exposes tmdbId directly alongside tvdbId.
+    r = _jellyseerr_request("GET", f"/api/v1/{media_kind}/{tmdb_id}")
+    if "_error" in r:
+        return None
+    media_info = r.get("mediaInfo")
+    return media_info.get("id") if media_info else None
+
+
 # Matches "S01E02" style markers anywhere in a filename -- the common case
 # for most shows in this library.
 SXXEXX_RE = re.compile(r"[Ss](\d{1,3})[Ee](\d{1,3})")
@@ -590,7 +635,44 @@ def sync_sonarr_episode(file_path: str) -> tuple:
                       {"episodeIds": [target["id"]], "monitored": False})
     if isinstance(r, dict) and "_error" in r:
         return f"found the episode but failed to unmonitor it ({r['_error']})", None
-    return f"unmonitored in Sonarr ({show_folder})", {"kind": "sonarr", "episode_id": target["id"]}
+    note = f"unmonitored in Sonarr ({show_folder})"
+    undo = {"kind": "sonarr", "episode_id": target["id"]}
+    # Staging one episode only means "this show is gone from Jellyfin/
+    # Jellyseerr too" when it was the LAST one -- the file has already
+    # been moved out by the time this runs (stage_for_deletion() moves it
+    # before calling this), so a fresh walk of the show folder correctly
+    # reflects whether anything real is left. Removing the whole show
+    # over a single still-active episode would be wrong; this only fires
+    # once the show is genuinely empty, same judgment call the original
+    # one-time bulk cleanup made for Sonarr itself, extended here to the
+    # two systems that cleanup never touched.
+    show_dir = os.path.dirname(file_path)
+    still_has_video = any(
+        fn.lower().endswith((".mkv", ".mp4"))
+        for _, _, files in os.walk(show_dir) for fn in files
+    ) if os.path.isdir(show_dir) else False
+    if not still_has_video:
+        this_series = next((s for s in series if s["id"] == sid), None)
+        # NOT a DELETE /Items/{id} call -- tried that first (see
+        # sync_radarr_movie's own comment on this), and confirmed live it
+        # fails with "Access ... is denied" any time the path still
+        # exists in ANY form (even a now-empty directory), only ever
+        # succeeding when the whole folder is already completely gone.
+        # Not a real filesystem permission problem (root, 777, still
+        # denied) -- some Jellyfin-side check this API key isn't clearing.
+        # A library refresh sidesteps it entirely: Jellyfin notices the
+        # missing files itself and drops the item on its own, same
+        # mechanism undo_stage_for_deletion() already relies on.
+        jr = _jellyfin_request("POST", "/Library/Refresh")
+        if "_error" not in jr:
+            note += "; show now empty -- Jellyfin refresh triggered"
+        js_id = find_jellyseerr_media_id(this_series.get("tmdbId"), "tv") \
+            if this_series and this_series.get("tmdbId") else None
+        if js_id:
+            jsr = _jellyseerr_request("DELETE", f"/api/v1/media/{js_id}")
+            if "_error" not in jsr:
+                note += "; reset in Jellyseerr"
+    return note, undo
 
 
 def sync_radarr_movie(file_path: str) -> tuple:
@@ -621,7 +703,31 @@ def sync_radarr_movie(file_path: str) -> tuple:
                       f"/movie/{target['id']}?deleteFiles=false&addImportExclusion=false")
     if isinstance(r, dict) and "_error" in r:
         return f"found the movie but failed to remove it from Radarr ({r['_error']})", None
-    return f"removed from Radarr ({movie_folder})", {"kind": "radarr", "payload": restore_payload}
+    note = f"removed from Radarr ({movie_folder})"
+    undo = {"kind": "radarr", "payload": restore_payload}
+    # Unlike a TV episode, one movie file IS the whole item -- staging it
+    # always means Jellyfin/Jellyseerr should stop showing it too, no
+    # "is anything else left" check needed.
+    #
+    # NOT a DELETE /Items/{id} call -- tried that first and confirmed
+    # live it fails with "Access ... is denied" any time the path still
+    # exists on disk in ANY form (even just an emptied-out folder after
+    # this file's own move), only succeeding when the whole folder is
+    # already completely gone. Not a real filesystem permission problem
+    # (Jellyfin runs as root, the file/folder are both 777, still
+    # denied) -- some Jellyfin-side check this API key isn't clearing. A
+    # library refresh sidesteps it entirely: Jellyfin notices the file's
+    # gone on its own and drops the item, same mechanism undo_stage_
+    # for_deletion() already relies on for the reverse direction.
+    jr = _jellyfin_request("POST", "/Library/Refresh")
+    if "_error" not in jr:
+        note += "; Jellyfin refresh triggered"
+    js_id = find_jellyseerr_media_id(target.get("tmdbId"), "movie") if target.get("tmdbId") else None
+    if js_id:
+        jsr = _jellyseerr_request("DELETE", f"/api/v1/media/{js_id}")
+        if "_error" not in jsr:
+            note += "; reset in Jellyseerr"
+    return note, undo
 
 
 def tag_castilian_track(file_path: str, audio_idx: int) -> tuple:
@@ -782,6 +888,17 @@ def undo_stage_for_deletion(undo: dict) -> str:
         r = _arr_request(RADARR_URL, RADARR_KEY, "POST", "/movie", arr["payload"])
         notes.append("failed to re-add to Radarr" if isinstance(r, dict) and "_error" in r
                      else "re-added to Radarr")
+    # Always trigger a refresh (not conditional on what the forward step
+    # did) -- cheap and idempotent either way, and simpler than tracking
+    # whether the forward call actually got as far as touching Jellyfin.
+    # No explicit "re-add" call exists (or is needed): the file is back
+    # on disk by now, so this just lets Jellyfin re-discover it itself,
+    # same as media-remove's own undo. Jellyseerr isn't explicitly
+    # restored either: it re-syncs its own availability from Sonarr/
+    # Radarr on its own schedule once the item is tracked there again, so
+    # forcing it here would just be racing that same sync for no benefit.
+    _jellyfin_request("POST", "/Library/Refresh")
+    notes.append("Jellyfin library refresh triggered")
     return "; ".join(notes)
 
 

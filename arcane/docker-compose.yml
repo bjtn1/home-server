@@ -14,6 +14,14 @@ services:
       - PGID=1000
       - ENCRYPTION_KEY=${ARCANE_ENCRYPTION_KEY}
       - JWT_SECRET=${ARCANE_JWT_SECRET}
+      # Caddy proxies us from 172.20.0.2 (bjtn-proxy), not loopback, so
+      # Arcane's auto-trust-loopback fallback doesn't cover it. Without this,
+      # Arcane can't trust X-Forwarded-Proto from Caddy, so it can't reliably
+      # tell the connection is HTTPS -- which broke cookie scheme detection
+      # for the container-logs websocket (regular polling requests still
+      # worked, but live log streaming silently failed to authenticate).
+      # https://getarcane.app/docs/configuration/websockets-reverse-proxies
+      - TRUSTED_PROXIES=172.20.0.0/24
       # Where Arcane scans for adoptable compose projects -- has to match the
       # mount path below exactly (it's a separate setting from the mount
       # itself; the mount alone doesn't make Arcane look there). Only scans

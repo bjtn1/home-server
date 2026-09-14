@@ -10,7 +10,6 @@
 }
 
 # this is the DNS stuff we need for every entry
-
 (porkbun_tls) {
   tls {
     dns porkbun {
@@ -25,13 +24,7 @@
 ########################################################
 
 # for pihole
-pihole.bjtn.xyz {
-  import porkbun_tls
-  redir / /admin/
-  reverse_proxy pihole:80
-}
-
-# for pihole (but shorter cause I am lazy)
+pihole.bjtn.xyz,
 pi.bjtn.xyz {
   import porkbun_tls
   redir / /admin/
@@ -42,6 +35,7 @@ pi.bjtn.xyz {
 ################### SYNCTHING ##########################
 ########################################################
 
+# for the thinkpad
 syncthing.bjtn.xyz {
   import porkbun_tls
   reverse_proxy syncthing:8384 {
@@ -87,7 +81,6 @@ music.bjtn.xyz {
 	}
 }
 
-
 ########################################################
 ################### ARR STACK ##########################
 ########################################################
@@ -122,16 +115,11 @@ seerr.bjtn.xyz {
   reverse_proxy seerr:5055
 }
 
-shelfmark.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy shelfmark:8084
-}
-
+shelfmark.bjtn.xyz,
 books.bjtn.xyz {
   import porkbun_tls
   reverse_proxy shelfmark:8084
 }
-
 
 qbit.bjtn.xyz {
   import porkbun_tls
@@ -158,11 +146,7 @@ youtarr.bjtn.xyz {
 ########################################################
 
 # for immich
-immich.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy immich:2283
-}
-
+immich.bjtn.xyz,
 photos.bjtn.xyz {
   import porkbun_tls
   reverse_proxy immich:2283
@@ -215,31 +199,19 @@ jenkins.bjtn.xyz {
 # build history, and console output. Services stopped+disabled
 # (systemctl --user), not deleted, if this ever needs reverting.
 
-dozzle.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy dozzle:8080
-}
-
+dozzle.bjtn.xyz,
 logs.bjtn.xyz {
   import porkbun_tls
   reverse_proxy dozzle:8080
 }
 
-home.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy homarr:7575
-}
-
+home.bjtn.xyz,
 homarr.bjtn.xyz {
   import porkbun_tls
   reverse_proxy homarr:7575
 }
 
-upsnap.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy 192.168.1.194:8091
-}
-
+upsnap.bjtn.xyz,
 wol.bjtn.xyz {
   import porkbun_tls
   reverse_proxy 192.168.1.194:8091
@@ -249,11 +221,7 @@ wol.bjtn.xyz {
 ################### NEW SERVICES ########################
 ########################################################
 
-romm.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy romm:8080
-}
-
+romm.bjtn.xyz,
 roms.bjtn.xyz {
   import porkbun_tls
   reverse_proxy romm:8080
@@ -275,9 +243,16 @@ arcane.bjtn.xyz {
 
 # cloud/nc/nextcloud all serve the same instance -- NEXTCLOUD_TRUSTED_DOMAINS
 # in nextcloud/.env must list all three or Nextcloud rejects the request.
-cloud.bjtn.xyz, nc.bjtn.xyz, nextcloud.bjtn.xyz {
+cloud.bjtn.xyz,
+nc.bjtn.xyz,
+nextcloud.bjtn.xyz {
   import porkbun_tls
   reverse_proxy nextcloud:80 {
     header_up X-Forwarded-Proto https
   }
+}
+
+whisper.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy 100.117.170.34:8178
 }

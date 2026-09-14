@@ -1,34 +1,8 @@
-# Jenkins controller only -- job execution for anything needing real host
-# filesystem access (ssd-backup.sh's /mnt/b1_4tb + /mnt/b2_4tb, and any
-# future script) happens on a separate host-native agent process, not in
-# this container. Matches how backup-control/supernote-control already run
-# natively on the host for the same reason, instead of growing an ever-
-# longer bind-mount list here. See jenkins/AGENT.md for the agent setup.
-#
-# ./data (JENKINS_HOME: jobs, build history, config, plugins) deliberately
-# lives on the system disk (/dev/sda2), not /mnt/vault -- same reasoning as
-# every other service's local ./service/config state here: that mount is
-# the external HDD behind the recurring USB/UAS abort issue, a bad fit for
-# a datastore that wants reliable writes.
-#
-# No separate JNLP port (50000) exposed -- modern Jenkins agents connect
-# over the same HTTPS port as the web UI via WebSocket, which is why
-# Caddy's global `protocols h1` (see caddy/Caddyfile's top-of-file comment)
-# matters here too.
 services:
   jenkins:
     image: jenkins/jenkins:lts-jdk21
     container_name: jenkins
     restart: unless-stopped
-    # 2026-09-09, found live: the image has no timezone set at all,
-    # defaulting to UTC -- every cron schedule configured tonight (all
-    # written assuming EDT, matching every other service's TZ=America/
-    # New_York convention here) was silently firing 4 hours off from
-    # intended. Worse for the two earliest ones (ssd-backup at 00:00,
-    # obs-album-sync at 00:30): interpreted as UTC, their trigger time
-    # had already passed (relative to EDT) before the container/jobs
-    # even existed tonight, so they simply never got a chance to fire at
-    # all yet, not just at the wrong hour.
     environment:
       - TZ=America/New_York
     volumes:

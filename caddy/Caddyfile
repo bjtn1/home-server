@@ -61,7 +61,7 @@ kindle.bjtn.xyz {
 
 # steamdeck's syncthing GUI
 steamdeck.bjtn.xyz {
-  import porkbun_tls 
+  import porkbun_tls
   reverse_proxy 100.65.182.44:8384 {
     # we need this because otherwise we'll get a "host check error"
     header_up Host {upstream_hostport}
@@ -80,7 +80,7 @@ thor.bjtn.xyz {
 
 # music tablet's syncthing GUI
 music.bjtn.xyz {
-  import porkbun_tls 
+  import porkbun_tls
 	reverse_proxy 100.74.227.72:8384 {
     # we need this because otherwise we'll get a "host check error"
 		header_up Host {upstream_hostport}
@@ -156,16 +156,6 @@ youtarr.bjtn.xyz {
 ########################################################
 ################### OTHER ##############################
 ########################################################
-
-# for portainer
-portainer.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy https://portainer:9443 {
-    transport http {
-      tls_insecure_skip_verify
-    }
-  }
-}
 
 # for immich
 immich.bjtn.xyz {
@@ -259,18 +249,6 @@ wol.bjtn.xyz {
 ################### NEW SERVICES ########################
 ########################################################
 
-yourls.bjtn.xyz {
-  import porkbun_tls
-  redir / /admin/
-  reverse_proxy yourls:8080
-}
-
-urls.bjtn.xyz {
-  import porkbun_tls
-  redir / /admin/
-  reverse_proxy yourls:8080
-}
-
 romm.bjtn.xyz {
   import porkbun_tls
   reverse_proxy romm:8080
@@ -284,16 +262,6 @@ roms.bjtn.xyz {
 scrutiny.bjtn.xyz {
   import porkbun_tls
   reverse_proxy scrutiny-web:8080
-}
-
-kuma.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy kuma:3001
-}
-
-ntfy.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy ntfy:80
 }
 
 arcane.bjtn.xyz {
@@ -313,4 +281,3 @@ cloud.bjtn.xyz, nc.bjtn.xyz, nextcloud.bjtn.xyz {
     header_up X-Forwarded-Proto https
   }
 }
-

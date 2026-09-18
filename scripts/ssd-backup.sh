@@ -21,7 +21,6 @@ B0_ROOT="${B0_ROOT:-/mnt/b2_4tb}"
 REPLICA_A="${REPLICA_A:-/mnt/b1_4tb}"
 LOG="${LOG:-/home/bjtn/logs/ssd-backup.log}"
 LOCKFILE="${LOCKFILE:-/tmp/ssd-backup.lock}"
-KUMA_PUSH_URL="https://kuma.bjtn.xyz/api/push/TgvuBICFKK"
 mkdir -p "$(dirname "$LOG")"
 
 exec 9>"$LOCKFILE"
@@ -105,7 +104,6 @@ done
 
 if [ "$CHECK_FAILED" -eq 1 ]; then
   log "at least one repo failed integrity check -- skipping replication entirely this run to avoid propagating corruption. Fix the flagged repo, then rerun."
-  curl -fsS -m 10 "$KUMA_PUSH_URL?status=down&msg=integrity+check+failed" >/dev/null 2>&1
   exit 1
 fi
 
@@ -119,8 +117,6 @@ fi
 
 if [ "$FAILED" -eq 1 ]; then
   log "one or more jobs failed"
-  curl -fsS -m 10 "$KUMA_PUSH_URL?status=down&msg=one+or+more+jobs+failed" >/dev/null 2>&1
   exit 1
 fi
 log "all good"
-curl -fsS -m 10 "$KUMA_PUSH_URL?status=up&msg=OK" >/dev/null 2>&1

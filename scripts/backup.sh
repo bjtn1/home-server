@@ -21,9 +21,6 @@
 # -- TLS certs, autosave.json, instance.uuid) -- fully auto-regenerated via
 # the porkbun DNS-01 wildcard on next start, not worth backing up. The
 # authored Caddyfile itself is a separate path and still gets backed up.
-#
-# On success, pings a Kuma push monitor so a missed/failed run shows up as
-# a monitoring alert instead of a silent failure.
 
 set -uo pipefail
 
@@ -42,7 +39,6 @@ export RESTIC_PASSWORD_FILE=/home/bjtn/.restic-password
 
 STAGING=/home/bjtn/.backup-staging
 LOG_TAG="[$(date '+%Y-%m-%d %H:%M:%S')]"
-KUMA_PUSH_URL="https://kuma.bjtn.xyz/api/push/ad383c5157752f22313f"
 
 mkdir -p "$STAGING"
 fail=0
@@ -147,10 +143,8 @@ restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune 2>&1 | sed
 
 if [ "$fail" -eq 0 ]; then
   echo "$LOG_TAG Backup completed successfully"
-  [ "$KUMA_PUSH_URL" != "__KUMA_PUSH_URL__" ] && curl -fsS -m 10 "$KUMA_PUSH_URL?status=up&msg=OK" >/dev/null 2>&1
   exit 0
 else
   echo "$LOG_TAG Backup completed WITH ERRORS -- see above"
-  [ "$KUMA_PUSH_URL" != "__KUMA_PUSH_URL__" ] && curl -fsS -m 10 "$KUMA_PUSH_URL?status=down&msg=backup+script+reported+errors" >/dev/null 2>&1
   exit 1
 fi

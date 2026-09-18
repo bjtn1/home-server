@@ -27,14 +27,12 @@ flock -n 9 || { echo "supernote-pdf-sync: already running (lock held), exiting";
 
 TARGET_DIR="/mnt/vault/nextcloud/bjtn/files"
 LOG="/home/bjtn/logs/supernote-pdf-sync.log"
-KUMA_PUSH_URL="https://kuma.bjtn.xyz/api/push/MIIQdecBCa"
 mkdir -p "$(dirname "$LOG")"
 
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
 
 if [ ! -d "$TARGET_DIR" ]; then
   log "ABORT: $TARGET_DIR does not exist (Nextcloud not mounted/up?)"
-  curl -fsS -m 10 "$KUMA_PUSH_URL?status=down&msg=target+dir+missing" >/dev/null 2>&1
   exit 1
 fi
 
@@ -70,8 +68,6 @@ if [ "$converted" -gt 0 ]; then
 fi
 
 if [ "$failed" -gt 0 ]; then
-  curl -fsS -m 10 "$KUMA_PUSH_URL?status=down&msg=$failed+conversions+failed" >/dev/null 2>&1
   exit 1
 fi
-curl -fsS -m 10 "$KUMA_PUSH_URL?status=up&msg=OK" >/dev/null 2>&1
 exit 0

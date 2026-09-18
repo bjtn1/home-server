@@ -33,7 +33,6 @@
 set -uo pipefail
 
 LOCKFILE="/tmp/arr-cutoff-search.lock"
-KUMA_PUSH_URL="https://kuma.bjtn.xyz/api/push/0r50felYTg"
 exec 9>"$LOCKFILE"
 flock -n 9 || { echo "arr-cutoff-search: already running (lock held), exiting"; exit 0; }
 
@@ -99,8 +98,6 @@ trigger "Sonarr" "$SONARR_URL" "$SONARR_KEY" "MissingEpisodeSearch"
 trigger "Sonarr" "$SONARR_URL" "$SONARR_KEY" "CutoffUnmetEpisodeSearch"
 
 if [ "$FAILED" -eq 1 ]; then
-    curl -fsS -m 10 "$KUMA_PUSH_URL?status=down&msg=one+or+more+triggers+failed" >/dev/null 2>&1
     exit 1
 fi
-curl -fsS -m 10 "$KUMA_PUSH_URL?status=up&msg=OK" >/dev/null 2>&1
 exit 0

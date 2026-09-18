@@ -19,14 +19,12 @@ import json
 import os
 import sys
 import urllib.request
-import urllib.parse
 from datetime import datetime, timezone
 
 IMMICH_URL = "https://immich.bjtn.xyz"
 IMMICH_API_KEY = os.environ["IMMICH_API_KEY"]
 LIBRARY_ID = "1655f2bc-93cc-418b-b22b-d98eaeded5c4"
 ALBUM_ID = "65699072-c99c-4251-8b6a-8c9f927f2eb4"
-KUMA_PUSH_URL = os.environ.get("KUMA_PUSH_URL", "https://kuma.bjtn.xyz/api/push/yKWixZlvsr")
 LOG_FILE = "/home/bjtn/logs/obs-album-sync.log"
 
 
@@ -36,18 +34,6 @@ def log(msg):
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     with open(LOG_FILE, "a") as f:
         f.write(line + "\n")
-
-
-def push_kuma(status, msg):
-    if not KUMA_PUSH_URL:
-        log(f"KUMA_PUSH_URL not set, skipping push (status={status})")
-        return
-    url = f"{KUMA_PUSH_URL}?status={status}&msg={urllib.parse.quote(msg)}"
-    try:
-        with urllib.request.urlopen(url, timeout=10):
-            pass
-    except Exception as e:
-        log(f"WARNING: failed to push Kuma status: {e}")
 
 
 def api(method, path, body=None):
@@ -107,7 +93,6 @@ def main():
 
     if not missing:
         log("=== run end: nothing to add ===")
-        push_kuma("up", "OK, nothing to add")
         return
 
     added = 0
@@ -124,9 +109,7 @@ def main():
 
     log(f"=== run end: added {added}, failed {failed} ===")
     if failed:
-        push_kuma("down", f"{failed} asset(s) failed to add to album")
         sys.exit(1)
-    push_kuma("up", f"OK, added {added} new asset(s)")
 
 
 if __name__ == "__main__":
@@ -136,5 +119,4 @@ if __name__ == "__main__":
         raise
     except Exception as e:
         log(f"ERROR: unhandled exception: {e}")
-        push_kuma("down", f"unhandled exception: {e}")
         sys.exit(1)

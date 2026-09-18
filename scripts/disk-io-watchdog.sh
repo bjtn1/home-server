@@ -3,9 +3,7 @@
 # failure signature hit twice on 2026-08-23 -- see media-drive-incident
 # memory). On a real burst (not a single transient blip) on a device the
 # WRITERS actually depend on, stops those containers -- an idempotent,
-# low-risk action already proven safe by hand twice -- and pushes a
-# down/alert status to a Kuma Push monitor so it's visible without anyone
-# needing to notice mid-incident. Does NOT attempt automated recovery
+# low-risk action already proven safe by hand twice. Does NOT attempt automated recovery
 # (unmount/USB-reauthorize/remount) -- that sequence is validated by hand
 # exactly once and isn't trusted to run unsupervised yet.
 #
@@ -58,18 +56,6 @@ seconds_since_last_alert() {
     fi
 }
 
-push_kuma() {
-    local msg="$1"
-    if [ -z "${KUMA_PUSH_URL:-}" ]; then
-        log "KUMA_PUSH_URL not configured in $CONF -- skipping push (create a Push monitor in Kuma first)"
-        return
-    fi
-    curl -s -G "$KUMA_PUSH_URL" \
-        --data-urlencode "status=down" \
-        --data-urlencode "msg=$msg" \
-        >/dev/null 2>&1 || log "failed to reach Kuma push URL"
-}
-
 handle_incident() {
     local device="$1"
     local count="$2"
@@ -83,9 +69,8 @@ handle_incident() {
     local since
     since=$(seconds_since_last_alert)
     if [ "$since" -ge "$COOLDOWN_SECONDS" ]; then
-        push_kuma "I/O errors on /dev/$device ($count in ${WINDOW_SECONDS}s). Stopped: $WRITERS. Manual recovery needed (unmount, replug/USB-reauthorize the drive, remount, restart containers) -- see media-drive-incident memory."
+        log "ALERT: I/O errors on /dev/$device ($count in ${WINDOW_SECONDS}s). Stopped: $WRITERS. Manual recovery needed (unmount, replug/USB-reauthorize the drive, remount, restart containers) -- see media-drive-incident memory."
         date +%s > "$STATE_FILE"
-        log "alert pushed to Kuma (cooldown reset)"
     else
         log "within cooldown (${since}s < ${COOLDOWN_SECONDS}s since last alert) -- containers re-stopped but no duplicate alert"
     fi

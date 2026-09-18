@@ -12,8 +12,8 @@ services:
       - ./caddy_config:/config
     networks:
       bjtn-proxy:
-        # Pinned so other containers can reach Caddy at a stable address --
-        # see the extra_hosts comment in kuma/docker-compose.yml for why.
+        # Pinned so other containers can reach Caddy at a stable address
+        # (e.g. arcane's extra_hosts entry depends on this).
         ipv4_address: 172.20.0.2
     restart: unless-stopped
     extra_hosts:

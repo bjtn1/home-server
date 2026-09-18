@@ -27,14 +27,12 @@ import os
 import shutil
 import sys
 import urllib.request
-import urllib.parse
 from datetime import datetime, timezone
 
 SABNZBD_URL = "https://nzb.bjtn.xyz"
 SABNZBD_API_KEY = os.environ["SABNZBD_API_KEY"]
 INCOMPLETE_DIR = "/mnt/vault/downloads/incomplete"
 LOG_FILE = "/home/bjtn/logs/sabnzbd-orphan-cleanup.log"
-KUMA_PUSH_URL = "https://kuma.bjtn.xyz/api/push/Zx5WlZatCe"
 
 
 def log(msg):
@@ -47,15 +45,6 @@ def log(msg):
 def fetch_json(url):
     with urllib.request.urlopen(url, timeout=60) as resp:
         return json.load(resp)
-
-
-def push_kuma(status, msg):
-    url = f"{KUMA_PUSH_URL}?status={status}&msg={urllib.parse.quote(msg)}"
-    try:
-        with urllib.request.urlopen(url, timeout=10):
-            pass
-    except Exception as e:
-        log(f"WARNING: failed to push Kuma status ({status}): {e}")
 
 
 def dir_size(path):
@@ -92,7 +81,6 @@ def main():
 
     if not os.path.isdir(INCOMPLETE_DIR):
         log(f"ERROR: {INCOMPLETE_DIR} does not exist, aborting")
-        push_kuma("down", f"{INCOMPLETE_DIR} does not exist")
         sys.exit(1)
 
     deleted_count = 0
@@ -120,7 +108,6 @@ def main():
         f"=== run end: deleted {deleted_count} folders, "
         f"{deleted_bytes / 1e9:.2f} GB ==="
     )
-    push_kuma("up", f"OK, deleted {deleted_count} folders")
 
 
 if __name__ == "__main__":
@@ -130,5 +117,4 @@ if __name__ == "__main__":
         raise
     except Exception as e:
         log(f"ERROR: unhandled exception: {e}")
-        push_kuma("down", f"unhandled exception: {e}")
         sys.exit(1)

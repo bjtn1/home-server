@@ -172,21 +172,6 @@ search.bjtn.xyz {
   reverse_proxy arr-control:8767
 }
 
-castilian.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy castilian-review:8768
-}
-
-remove.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy media-remove:8769
-}
-
-stage.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy stage-control:8770
-}
-
 jenkins.bjtn.xyz {
   import porkbun_tls
   reverse_proxy jenkins:8080

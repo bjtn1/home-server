@@ -45,24 +45,13 @@
 !disk-io-watchdog.sh
 !disk-io-watchdog-resolved.sh
 !disk-io-watchdog.conf
-# Shared LATAM_PATTERN/CASTILIAN_PATTERN constants, sourced by
-# castilian-scan.py so it can't drift out of sync with the rest of this
-# project's Castilian-dialect detection, 2026-09-04
-!castilian-patterns.sh
-# Extracts a short clip from one audio track (local ffmpeg) for
-# castilian-review's snippet playback -- 2026-09-08
-!castilian-extract-clip.sh
-# Full metadata-only Castilian/not-Castilian/ambiguous sweep of the whole
-# TV+movies library -- run on demand via the Jenkins "castilian-scan" job
-# (renamed 2026-09-11 from "castilian-pipeline", which ran a since-retired
-# drop-zone/mux/Whisper pipeline instead -- that automation, and the
-# scripts it depended on, were removed 2026-09-11 as no longer used).
-# Confirmed-not-Castilian files are staged + Sonarr/Radarr synced
-# automatically; anything metadata can't decide goes to castilian-review
-# for a human call -- no Whisper/content verification step at all.
-# SONARR_URL/SONARR_KEY, RADARR_URL/RADARR_KEY read from environment, no
-# secrets in the file itself -- 2026-09-11.
-!castilian-scan.py
+# Per-show/movie granular restic backup provisioning for /tv + /movies
+# (now the manually-curated Castilian-only library) -- run on demand via
+# the Jenkins "media-backup-provision" job. Replaces castilian-scan.py
+# (retired 2026-09-18: its purpose, finding non-Castilian audio, is moot
+# once /tv is manually-verified before anything enters it). No API keys
+# needed -- pure filesystem + restic, no Sonarr/Radarr calls.
+!media-backup-provision.py
 # Immich OBS-album membership sync, bjtn crontab (2026-09-02). API key is
 # NOT in this file -- passed inline via crontab's env prefix, same
 # treatment as the Sonarr/Radarr keys in arr-cutoff-search.sh's history.

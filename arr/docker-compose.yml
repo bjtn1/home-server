@@ -37,8 +37,8 @@ services:
     volumes:
       - ./qbittorrent/config:/config
       - ${downloads}:/downloads
-      - ${tv}:/mnt/media/tv
-      - ${movies}:/mnt/media/movies
+      - ${tv_english}:/mnt/media/tv-english
+      - ${movies_english}:/mnt/media/movies-english
       - ${books}:/mnt/media/books
       - ${downloads}:/mnt/media/downloads
       - ${youtube}:/mnt/media/youtube
@@ -101,8 +101,10 @@ services:
       - DOCKER_MODS=linuxserver/mods:universal-package-install
       - INSTALL_PACKAGES=ffmpeg|jq
     volumes:
+      # /mnt/vault/tv + /movies (manually-curated Castilian library) are deliberately NOT
+      # mounted into sonarr/radarr/bazarr/qbittorrent -- only jellyfin (ro) sees them
       - ./sonarr/config:/config
-      - ${tv}:/tv
+      - ${tv_english}:/tv-english
       - ${downloads}:/downloads
       - ../scripts:/scripts:ro
     #ports:
@@ -122,8 +124,7 @@ services:
       - INSTALL_PACKAGES=ffmpeg|jq
     volumes:
       - ./radarr/config:/config
-      - ${movies}:/movies
-      - ${movies_archive}:/movies-archive
+      - ${movies_english}:/movies-english
       - ${downloads}:/downloads
       - ../scripts:/scripts:ro
     #ports:
@@ -147,6 +148,8 @@ services:
       - ./jellyfin/cache:/cache
       - ${tv}:/media/tv:ro
       - ${movies}:/media/movies:ro
+      - ${tv_english}:/media/tv-english:ro
+      - ${movies_english}:/media/movies-english:ro
       - ${downloads}:/media/downloads:ro
       - ${youtube}:/media/youtube:ro
       - ${music_sheets}:/media/music-sheets:ro
@@ -166,8 +169,8 @@ services:
       - TZ=America/New_York
     volumes:
       - ./bazarr/config:/config
-      - ${movies}:/movies
-      - ${tv}:/tv
+      - ${movies_english}:/movies-english
+      - ${tv_english}:/tv-english
     #ports:
       #- 6767:6767
     restart: unless-stopped

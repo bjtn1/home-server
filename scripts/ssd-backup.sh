@@ -65,7 +65,10 @@ for repo_dir in "$B0_ROOT"/*/; do
     continue
   fi
 
-  mapfile -t paths < <(echo "$snap_json" | jq -r '.[0].paths[]?' 2>/dev/null)
+  # `--latest 1` returns one snapshot per (host, paths) GROUP, oldest group first, so
+  # .[0] can be a stale group (e.g. a show whose repo was re-seeded against a renamed
+  # folder). Take the newest snapshot overall.
+  mapfile -t paths < <(echo "$snap_json" | jq -r 'max_by(.time)? | .paths[]?' 2>/dev/null)
   if [ "${#paths[@]}" -eq 0 ]; then
     log "SKIP $repo: no prior snapshot yet -- back it up manually once first"
     continue

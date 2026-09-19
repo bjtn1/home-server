@@ -52,6 +52,22 @@
 # once /tv is manually-verified before anything enters it). No API keys
 # needed -- pure filesystem + restic, no Sonarr/Radarr calls.
 !media-backup-provision.py
+# Castilian subtitle generation via the whisper.cpp server (see
+# scripts/whisper-subtitle-plan.md): shared modules + read-only scan + generator.
+# No secrets; server URL comes from WHISPER_SERVER_URL / a public default.
+!whisper_client.py
+!whisper_media.py
+!whisper_srt.py
+!whisper-scan.py
+!whisper-generate.py
+!whisper-glossary.py
+!whisper-vocab.py
+# In-place library normalizer for the Castilian library (stretch 4:3->16:9, remux to mkv,
+# tag ONLY the Castilian audio track) -- Jenkins job "castilianize", dry-run by default.
+!castilianize.py
+# One-shot relabel of legacy mis-tagged (spa) audio tracks by track NAME; dry-run default -- pc-claude's script,
+# adapted with a recent-file guard.
+!relabel_audio.py
 # Immich OBS-album membership sync, bjtn crontab (2026-09-02). API key is
 # NOT in this file -- passed inline via crontab's env prefix, same
 # treatment as the Sonarr/Radarr keys in arr-cutoff-search.sh's history.

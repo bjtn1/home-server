@@ -125,7 +125,8 @@ def main():
                 snaps = json.loads(r.stdout) if r.returncode == 0 else []
             except ValueError:
                 snaps = []
-            latest_paths = snaps[0].get("paths", []) if snaps else []
+            # --latest 1 returns one snapshot per (host, paths) group, oldest group first
+            latest_paths = max(snaps, key=lambda x: x["time"]).get("paths", []) if snaps else []
             if latest_paths == [full]:
                 log(f"SKIP {slug}-backup: already provisioned ({full})")
                 skipped += 1
@@ -186,9 +187,12 @@ def main():
                 except ValueError:
                     log(f"WARN: could not parse snapshot JSON for {entry}, leaving alone")
                     continue
-                if not snaps or not snaps[0].get("paths"):
+                if not snaps:
                     continue
-                path = snaps[0]["paths"][0]
+                newest = max(snaps, key=lambda x: x["time"])
+                if not newest.get("paths"):
+                    continue
+                path = newest["paths"][0]
                 if not (path.startswith(tv_prefix) or path.startswith(movies_prefix)):
                     continue  # out of scope for this script entirely -- a different backup system's repo
 

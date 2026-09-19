@@ -9,7 +9,7 @@ services:
     volumes:
       - ./config:/config
       - ./data:/data
-      - /mnt/games:/mnt/games
+      - /mnt/vault/games:/mnt/games
       - /mnt/vault/books:/mnt/books
     ports:
       - "22000:22000/tcp"

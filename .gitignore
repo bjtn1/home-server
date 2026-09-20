@@ -62,6 +62,8 @@
 !whisper-generate.py
 !whisper-glossary.py
 !whisper-vocab.py
+# Regression tests for the whisper SRT cleaner/name-correction (fixtures = real failures seen on cartoon output)
+!test_whisper_srt.py
 # In-place library normalizer for the Castilian library (stretch 4:3->16:9, remux to mkv,
 # tag ONLY the Castilian audio track) -- Jenkins job "castilianize", dry-run by default.
 !castilianize.py

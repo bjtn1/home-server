@@ -42,7 +42,6 @@ services:
       - ${books}:/mnt/media/books
       - ${downloads}:/mnt/media/downloads
       - ${youtube}:/mnt/media/youtube
-      - ${music_sheets}:/mnt/media/music-sheets
       - ${emu}:/mnt/emu
       - ${games}:/mnt/games
     restart: unless-stopped
@@ -152,7 +151,6 @@ services:
       - ${movies_english}:/media/movies-english:ro
       - ${downloads}:/media/downloads:ro
       - ${youtube}:/media/youtube:ro
-      - ${music_sheets}:/media/music-sheets:ro
       - ${obs}:/obs:ro
     ports:
       - 8096:8096

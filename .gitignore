@@ -73,6 +73,8 @@
 # packed into <=27 s windows and timestamps are mapped back, fixing cues placed tens of seconds early/late after silences.
 !speech_vad.py
 !whisper_chunks.py
+# castilianize baked-in side-bar detection+fix: real-ffmpeg end-to-end tests on synthetic videos (~1 min)
+!test_castilianize_bars.py
 !test_whisper_chunks.py
 # In-place library normalizer for the Castilian library (stretch 4:3->16:9, remux to mkv,
 # tag ONLY the Castilian audio track) -- Jenkins job "castilianize", dry-run by default.

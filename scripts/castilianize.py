@@ -5,6 +5,12 @@ Idempotent library-conversion pipeline for Castilian Spanish media libraries.
 For every video file under the given root path(s):
   - If it's a 4:3 (or near-4:3) video, stretch it to 16:9 (no crop, no pillarbox).
     Already-16:9 (or otherwise non-4:3) video is left untouched.
+  - BAKED-IN SIDE BARS ("fake 16:9"): a file that DECLARES 16:9 but whose picture is a 4:3 image with black bars
+    burned into the left/right of the frame (Sargento Keroro: 480x360 picture inside 640x360) is detected with
+    ffmpeg cropdetect at 5 points; the bars are cropped off and the picture stretched to fill 16:9 (same policy
+    as declared-4:3 files). The crop is MEASURED per file, the output is re-measured (bars must be gone) before
+    the original is replaced, and results are cached per file so re-runs are cheap. Top/bottom bars
+    (cinematic letterbox, e.g. Loki) are NOT touched.
   - If it isn't already a Matroska (.mkv) container, remux/convert it to one.
   - Tag the CASTILIAN audio track as Spanish (legacy `spa` + IETF `es-ES`).
     ONLY that one track: which one is decided by whisper_media.pick_spanish_audio()
@@ -44,6 +50,7 @@ import json
 import logging
 import os
 import shutil
+import re
 import subprocess
 import sys
 import time
@@ -156,6 +163,108 @@ def classify_aspect(width, height, dar_str) -> str:
     return "unusual"
 
 
+BAR_CACHE = os.environ.get("CASTILIANIZE_BAR_CACHE", os.path.expanduser("~/.cache/castilianize-bars.json"))
+BAR_SAMPLES = (0.12, 0.3, 0.5, 0.7, 0.88)
+_bar_cache = None
+
+
+def is_pillarbox(w, h, cw, ch, x) -> bool:
+    """Pure decision: is a measured content box (cw x ch at x) a 4:3 picture with symmetric side bars in a wide frame?
+    cropdetect boxes only ever SHRINK on dark scenes, so callers pass the WIDEST box seen across samples."""
+    if not (w and h and cw and ch) or w / h < 1.6:            # frame must be wide
+        return False
+    left, right = x, w - (x + cw)
+    return (ch >= 0.96 * h                                      # full height
+            and cw <= 0.86 * w                                  # a real bar on the sides
+            and abs(cw / ch - 4 / 3) < 0.06                     # the picture itself is ~4:3
+            and left >= 0.05 * w and right >= 0.05 * w         # bars on BOTH sides...
+            and abs(left - right) <= 0.05 * w)                  # ...and roughly equal (centred picture)
+
+
+def measure_content_box(tools: Tools, path: Path):
+    """Widest content box across BAR_SAMPLES points -> (cw, ch, x) or None if it cannot be measured."""
+    try:
+        d = subprocess.run([tools.ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                           capture_output=True, text=True, timeout=60).stdout.strip()
+        dur = float(d)
+    except (ValueError, subprocess.TimeoutExpired, OSError):
+        return None
+    boxes = []
+    for frac in BAR_SAMPLES:
+        t = max(1.0, dur * frac)
+        try:
+            r = subprocess.run([tools.ffmpeg, "-v", "info", "-ss", f"{t:.1f}", "-i", str(path), "-t", "2",
+                                "-vf", "cropdetect=limit=24:round=2:reset=0", "-an", "-f", "null", "-"],
+                               capture_output=True, text=True, timeout=180)
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        m = re.findall(r"crop=(\d+):(\d+):(\d+):(\d+)", r.stderr)
+        if m:
+            boxes.append(tuple(int(v) for v in m[-1]))
+    if len(boxes) < 3:
+        return None
+    cw = max(b[0] for b in boxes)
+    ch = max(b[1] for b in boxes)
+    xs = sorted(b[2] for b in boxes if b[0] == cw)
+    return cw, ch, xs[len(xs) // 2]
+
+
+def _load_bar_cache():
+    global _bar_cache
+    if _bar_cache is None:
+        try:
+            with open(BAR_CACHE, encoding="utf-8") as f:
+                _bar_cache = json.load(f)
+        except (OSError, ValueError):
+            _bar_cache = {}
+    return _bar_cache
+
+
+def _save_bar_cache():
+    try:
+        os.makedirs(os.path.dirname(BAR_CACHE), exist_ok=True)
+        tmp = BAR_CACHE + ".part"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_bar_cache, f)
+        os.replace(tmp, BAR_CACHE)
+    except OSError as e:
+        log.warning("could not save bar cache: %s", e)
+
+
+def bars_crop(tools: Tools, path: Path, width, height):
+    """-> (cw, ch, x, y) crop that removes baked-in side bars, or None (no bars / cannot tell). Cached per file."""
+    st = path.stat()
+    key = f"{path}|{st.st_size}|{int(st.st_mtime)}"
+    cache = _load_bar_cache()
+    if key not in cache:
+        box = measure_content_box(tools, path)
+        if box is None:
+            return None                                          # transient failure: do not cache, do not touch
+        cw, ch, x = box
+        if is_pillarbox(width, height, cw, ch, x):
+            # shrink 2 px on each side (cropdetect can include a dark fringe) and keep everything even
+            cache[key] = [(cw - 4) // 2 * 2, ch // 2 * 2, (x + 2) // 2 * 2, 0]
+        else:
+            cache[key] = []
+        _save_bar_cache()
+    v = cache[key]
+    return tuple(v) if v else None
+
+
+def bars_gone(tools: Tools, path: Path) -> bool:
+    """After a fix: the output must measure as bar-free (a stale cache entry must not vouch for it)."""
+    box = measure_content_box(tools, path)
+    if box is None:
+        return False
+    try:
+        info = subprocess.run([tools.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                               "-of", "csv=p=0", str(path)], capture_output=True, text=True, timeout=60).stdout.strip().split(",")
+        w, h = int(info[0]), int(info[1])
+    except (ValueError, IndexError, subprocess.TimeoutExpired, OSError):
+        return False
+    return not is_pillarbox(w, h, *box)
+
+
 def audio_tag_plan(audio_tracks: list) -> dict:
     """Decide which SINGLE audio track (if any) is the Castilian one and whether it still
     needs the spa/es-ES tag. -> {'target': ordinal|None, 'needs': bool, 'note': str}"""
@@ -214,6 +323,20 @@ def run_ffmpeg_stretch(tools: Tools, src: Path, dst: Path) -> bool:
     return result.returncode == 0 and verify_output(tools, dst)
 
 
+def run_ffmpeg_crop_stretch(tools: Tools, src: Path, dst: Path, crop) -> bool:
+    """Crop the baked-in side bars, then widen the remaining ~4:3 picture to exactly 16:9 at the same height."""
+    cw, ch, x, y = crop
+    vf = f"crop={cw}:{ch}:{x}:{y},scale=trunc(ih*16/9/2)*2:ih:flags=lanczos,setsar=1"
+    result = subprocess.run(
+        [tools.ffmpeg, "-y", "-i", str(src),
+         "-map", "0:V", "-map", "0:a?", "-map", "0:s?", "-map", "0:t?",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+         "-vf", vf, "-c:a", "copy", "-c:s", "copy", "-c:t", "copy", str(dst)],
+        capture_output=True, timeout=6 * 3600,
+    )
+    return result.returncode == 0 and verify_output(tools, dst) and bars_gone(tools, dst)
+
+
 def run_mkvmerge_remux(tools: Tools, src: Path, dst: Path) -> bool:
     result = subprocess.run([tools.mkvmerge, "-o", str(dst), str(src)],
                             capture_output=True, timeout=3600)
@@ -244,13 +367,17 @@ def process_file(tools: Tools, path: Path, dry_run: bool, min_age_minutes: float
     multi_video = info["video_streams"] > 1
     is_mkv = path.suffix.lower() == ".mkv"
     stretch_needed = aspect == "stretch" and not multi_video
+    crop = None
+    if aspect == "leave" and not multi_video:        # declared 16:9: is the picture really 4:3 with baked-in bars?
+        crop = bars_crop(tools, path, info["width"], info["height"])
+    crop_needed = crop is not None
     plan = audio_tag_plan(info["audio_tracks"]) if info["audio_tracks"] else \
         {"target": None, "needs": False, "note": "no audio"}
     tag_needed = plan["needs"]
     target = path.with_suffix(".mkv")
     ambiguous = plan["note"].startswith("AMBIGUOUS")
 
-    if is_mkv and not stretch_needed and not tag_needed:
+    if is_mkv and not stretch_needed and not crop_needed and not tag_needed:
         if multi_video and aspect == "stretch":
             return "MULTI_VIDEO"
         return "AUDIO_AMBIGUOUS" if ambiguous else "ALREADY_DONE"
@@ -262,6 +389,8 @@ def process_file(tools: Tools, path: Path, dry_run: bool, min_age_minutes: float
         actions = []
         if stretch_needed:
             actions.append("stretch")
+        if crop_needed:
+            actions.append("crop-bars+stretch")
         if not is_mkv:
             actions.append("remux-to-mkv")
         if tag_needed:
@@ -276,6 +405,10 @@ def process_file(tools: Tools, path: Path, dry_run: bool, min_age_minutes: float
             if not run_ffmpeg_stretch(tools, path, tmp):
                 return "STRETCH_FAILED"
             status = "STRETCHED" if is_mkv else "STRETCHED_AND_CONVERTED"
+        elif crop_needed:
+            if not run_ffmpeg_crop_stretch(tools, path, tmp, crop):
+                return "BARS_FIX_FAILED"
+            status = "BARS_FIXED" if is_mkv else "BARS_FIXED_AND_CONVERTED"
         elif not is_mkv:
             if not run_mkvmerge_remux(tools, path, tmp) and not run_ffmpeg_remux(tools, path, tmp):
                 return "REMUX_FAILED"
@@ -344,7 +477,7 @@ def main():
             log.info("%s: %s", status, path)
 
     log.info("Summary: %s", counts)
-    bad = {k: v for k, v in counts.items() if k in ("PROBE_FAILED", "STRETCH_FAILED", "REMUX_FAILED", "ERROR")}
+    bad = {k: v for k, v in counts.items() if k in ("PROBE_FAILED", "STRETCH_FAILED", "BARS_FIX_FAILED", "REMUX_FAILED", "ERROR")}
     sys.exit(1 if bad else 0)
 
 

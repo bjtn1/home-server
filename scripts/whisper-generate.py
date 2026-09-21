@@ -51,6 +51,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import whisper_client as C
 import whisper_media as M
 import whisper_srt as S
+import whisper_chunks as K
 
 DEFAULT_ROOTS = ["/mnt/vault/tv", "/mnt/vault/movies"]
 CACHE_DIR = os.environ.get("WHISPER_CACHE_DIR", "/home/bjtn/whisper-subtitle-cache")
@@ -179,8 +180,17 @@ def process(path, res, args):
                         "-c:a", "pcm_s16le", wav], check=True, timeout=1800)
         prompt = glossary_prompt(path)
         extra = {"beam_size": str(args.beam_size)} if args.beam_size and args.beam_size > 1 else {}
-        text, secs = C.transcribe(wav, timeout=timeout, prompt=prompt, extra=extra)
-        raw = S.parse_srt(text)
+        chunk_stats = None
+        if getattr(args, "chunked", False):
+            # speech-chunked: VAD finds real speech, packs of <= 27 s are transcribed separately and mapped back
+            # (fixes cues placed tens of seconds early/late after long silences; see whisper_chunks.py)
+            def _one(p):
+                return C.transcribe(p, timeout=300, prompt=prompt, extra=extra)[0]
+            raw, chunk_stats = K.transcribe_chunked(wav, _one, S.parse_srt)
+            secs = time.time() - t0
+        else:
+            text, secs = C.transcribe(wav, timeout=timeout, prompt=prompt, extra=extra)
+            raw = S.parse_srt(text)
         if not raw:
             raise RuntimeError("whisper returned no parsable cues")
         cleaned, report = S.clean(raw)
@@ -197,6 +207,7 @@ def process(path, res, args):
             "status": "ok", "video": path, "srt": target, "srt_sha256": sha256(target),
             "audio_track": res["audio_index"], "audio_name": res["audio_name"],
             "beam_size": args.beam_size, "glossary": bool(prompt),
+            "chunked": bool(chunk_stats), "chunk_stats": chunk_stats,
             "cues_raw": len(raw), "cues_written": len(cleaned),
             "collapsed_runs": len(report["collapsed_runs"]),
             "flagged_repeats": report["flagged_repeats"],
@@ -274,6 +285,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--regen", action="store_true",
                     help="also redo files whose subtitle is our own unchanged output (e.g. after a cleaner fix)")
+    ap.add_argument("--chunked", action="store_true",
+                    help="VAD-chunked transcription: only speech is sent to whisper and timestamps are mapped back "
+                         "(needs ~/venvs/vad; fixes mistimed/hallucinated cues after long silences)")
     ap.add_argument("--postprocess", action="store_true",
                     help="no transcription: re-run the cleaner (incl. line reflow) + curated name fixes on our own existing subtitles and migrate them to the .es.Castilian.srt name")
     ap.add_argument("--beam-size", type=int, default=5)

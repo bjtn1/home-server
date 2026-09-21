@@ -26,6 +26,13 @@ clean() rules (deliberately conservative -- real dialogue repeats too):
   6. OVER-LONG CUES -> trim. A cue displayed much longer than its text needs
      (allowed = 1 s + 70 ms/char, clamped to 1.5-10 s, plus 1 s slack) gets its
      END pulled in to start + allowed. Starts are left alone.
+  7. (see below) pure "suscríbete"-style hallucination cues are dropped.
+  8. REFLOW for readability. A cue longer than MAX_LINE chars is wrapped into balanced lines (max 2, each
+     <= MAX_LINE); a cue longer than MAX_CUE_CHARS is SPLIT at sentence/clause boundaries into several cues
+     sharing the original time span in proportion to their text. (Real case: an opening narration of 141
+     chars on one line, held 10 s, filled half the screen.)
+  9. READING SPEED. A cue shown at more than READ_CPS chars/second is extended into the silence after it
+     (never into the next cue) up to what it needs, capped at MAX_CUE_MS.
 Everything changed or flagged is listed in the returned report.
 
 CLI:
@@ -52,6 +59,12 @@ TRIM_PER_CHAR_MS = 70
 TRIM_MIN_MS = 1500
 TRIM_MAX_MS = 10000
 TRIM_SLACK_MS = 1000
+# reflow / readability (rules 8-9)
+MAX_LINE = 42
+MAX_CUE_CHARS = 84            # two full lines
+READ_CPS = 17                 # target reading speed, characters per second
+MAX_CUE_MS = 7000
+MIN_GAP_MS = 80               # never let an extended cue touch the next one
 
 SUSPECT_PHRASES = [
     r"subt[ií]tulos (realizados )?por la comunidad de amara\.org",
@@ -128,6 +141,15 @@ def _same(a, b):
     return bool(a) and bool(b) and difflib.SequenceMatcher(None, a, b).ratio() >= SIMILARITY
 
 
+_CHAR_LOOP = re.compile(r"(\w{1,6}?)\1{5,}", re.I)
+
+
+def _cut_char_loops(text):
+    """Collapse an UNSPACED repetition ('Cucucucucucu...', 300+ chars) to 3 repeats. -> (text, changed)."""
+    new = _CHAR_LOOP.sub(lambda m: m.group(1) * 3, text)
+    return new, new != text
+
+
 def _cut_intra(text):
     """Truncate back-to-back repeats of a 1-4 word phrase. -> (text, changed)."""
     words = text.split()
@@ -156,20 +178,119 @@ def _cut_intra(text):
     return " ".join(words), changed
 
 
-def clean(cues):
-    """-> (cleaned_cues, report). Input cues are not mutated."""
-    cues = [list(c) for c in cues]
-    report = {"cues_in": len(cues), "collapsed_runs": [], "flagged_repeats": [],
-              "intra_truncated": [], "fixed_durations": 0, "trimmed_durations": 0,
-              "suspect_phrases": [], "dropped_hallucinations": []}
+_SENT_END = re.compile(r"(?<=[.!?…])\s+(?=[¡¿A-ZÁÉÍÓÚÑa-z0-9\"«(])")
+_CLAUSE = re.compile(r"(?<=[,;:—–-])\s+")
 
-    # 4. minimum duration / negative duration
-    for c in cues:
-        if c[1] <= c[0]:
-            c[1] = c[0] + MIN_DURATION_MS
-            report["fixed_durations"] += 1
 
-    # 1. stuck-loop collapse
+def _wrap(text):
+    """Balanced wrap of a <= MAX_CUE_CHARS string into 1-2 lines of <= MAX_LINE. Deterministic."""
+    text = " ".join(text.split())
+    if len(text) <= MAX_LINE:
+        return text
+    mid = len(text) / 2
+    best = None
+    for m in re.finditer(r"\s", text):
+        i = m.start()
+        a, b = text[:i], text[i + 1:]
+        if len(a) > MAX_LINE or len(b) > MAX_LINE:
+            continue
+        # prefer breaking after punctuation, then the most balanced split
+        score = abs(i - mid) - (6 if a.rstrip()[-1:] in ",;:.!?…" else 0)
+        if best is None or score < best[0]:
+            best = (score, a, b)
+    if best is None:  # no balanced 2-line fit (very long word run): greedy 2 lines
+        cut = text.rfind(" ", 0, MAX_LINE + 1)
+        cut = cut if cut > 0 else MAX_LINE
+        first, rest = text[:cut].strip(), text[cut:].strip()
+        if len(rest) > MAX_LINE:               # unbreakable overflow: hard-truncate, never exceed 2 lines
+            rest = rest[:MAX_LINE - 1].rstrip() + "…"
+        return first + "\n" + rest
+    return best[1] + "\n" + best[2]
+
+
+def _can_wrap(text):
+    """True if text fits on 1 line, or splits at a space into 2 lines that both fit MAX_LINE."""
+    if len(text) <= MAX_LINE:
+        return True
+    return any(len(text[:m.start()]) <= MAX_LINE and len(text[m.start() + 1:]) <= MAX_LINE
+               for m in re.finditer(r"\s", text))
+
+
+def _chunks(text):
+    """Split text into pieces that each WRAP into <= 2 lines of MAX_LINE, at the best boundary near the middle
+    (sentence > clause > space)."""
+    if _can_wrap(text):
+        return [text]
+    mid = len(text) / 2
+    cands = []
+    for rx, bonus in ((_SENT_END, 25), (_CLAUSE, 10)):
+        for m in rx.finditer(text):
+            i = m.start()
+            if 12 <= i <= len(text) - 12:
+                cands.append((abs(i - mid) - bonus, i))
+    if not cands:
+        for m in re.finditer(r"\s", text):
+            i = m.start()
+            if 12 <= i <= len(text) - 12:
+                cands.append((abs(i - mid), i))
+    if not cands:
+        return [text]
+    i = min(cands)[1]
+    return _chunks(text[:i + 1].strip()) + _chunks(text[i + 1:].strip())
+
+
+def reflow(cues, report=None):
+    """Rule 8: wrap and split cues so no cue is more than two lines of MAX_LINE chars."""
+    out = []
+    wrapped = split = 0
+    for s, e, t_ in cues:
+        flat = " ".join(t_.split())
+        if len(flat) <= MAX_LINE:
+            out.append([s, e, flat])
+            continue
+        parts = _chunks(flat)
+        if len(parts) == 1:
+            out.append([s, e, _wrap(parts[0])])
+            wrapped += 1
+            continue
+        split += 1
+        total = sum(len(x) for x in parts)
+        span = max(e - s, 1)
+        cur = s
+        for k, part in enumerate(parts):
+            end = e if k == len(parts) - 1 else cur + int(span * len(part) / total)
+            out.append([cur, max(end, cur + 1), _wrap(part)])
+            cur = end
+    if report is not None:
+        report["wrapped_cues"] = wrapped
+        report["split_cues"] = split
+    return out
+
+
+def extend_for_reading(cues, report=None):
+    """Rule 9: give fast cues more time, but only into the silence after them."""
+    n = 0
+    for i, c in enumerate(cues):
+        need = min(MAX_CUE_MS, max(1000, int(1000 * len(c[2].replace("\n", " ")) / READ_CPS)))
+        if c[1] - c[0] >= need:
+            continue
+        if i + 1 < len(cues):
+            # a gap < STUCK_GAP_MS between near-identical cues would be re-merged by rule 1 on the next run
+            gap = STUCK_GAP_MS + 1 if _same(_norm(c[2]), _norm(cues[i + 1][2])) else MIN_GAP_MS
+            limit = cues[i + 1][0] - gap
+        else:
+            limit = c[0] + need
+        new_end = min(c[0] + need, limit)
+        if new_end > c[1]:
+            c[1] = new_end
+            n += 1
+    if report is not None:
+        report["extended_for_reading"] = n
+    return cues
+
+
+def _collapse_stuck(cues, report):
+    """Rule 1: merge consecutive near-identical cues that overlap or touch (< STUCK_GAP_MS apart)."""
     out = []
     i = 0
     while i < len(cues):
@@ -187,6 +308,33 @@ def clean(cues):
         else:
             out.append(cues[i])
         i = j + 1
+    return out
+
+
+def _trim_long(cues, report):
+    """Rule 6: pull the END of over-long cues in to what their text needs (starts are never moved)."""
+    for c in cues:
+        allowed = min(TRIM_MAX_MS, max(TRIM_MIN_MS, TRIM_BASE_MS + TRIM_PER_CHAR_MS * len(c[2])))
+        if c[1] - c[0] > allowed + TRIM_SLACK_MS:
+            c[1] = c[0] + allowed
+            report["trimmed_durations"] += 1
+
+
+def clean(cues):
+    """-> (cleaned_cues, report). Input cues are not mutated."""
+    cues = [list(c) for c in cues]
+    report = {"cues_in": len(cues), "collapsed_runs": [], "flagged_repeats": [],
+              "intra_truncated": [], "fixed_durations": 0, "trimmed_durations": 0,
+              "suspect_phrases": [], "dropped_hallucinations": []}
+
+    # 4. minimum duration / negative duration
+    for c in cues:
+        if c[1] <= c[0]:
+            c[1] = c[0] + MIN_DURATION_MS
+            report["fixed_durations"] += 1
+
+    # 1. stuck-loop collapse
+    out = _collapse_stuck(cues, report)
 
     # 2. spread repeats: flag only
     i = 0
@@ -201,7 +349,13 @@ def clean(cues):
 
     # 3. intra-cue loops + 5. suspect phrases
     for c in out:
+        c[2], _ = _cut_char_loops(c[2])
         new, ch = _cut_intra(c[2])
+        for _ in range(4):                       # nested loops ("1, 2, 3, 1, 2, 3, ...") peel one layer per pass:
+            again, ch2 = _cut_intra(new)         # iterate to a fixed point so clean() is stable
+            if not ch2:
+                break
+            new = again
         if ch:
             report["intra_truncated"].append({"at": _ts(c[0]), "was": c[2][:80], "now": new[:80]})
             c[2] = new
@@ -210,11 +364,7 @@ def clean(cues):
 
     # 6. trim over-long display durations (after collapsing, so merged spans are
     # sized by their text too)
-    for c in out:
-        allowed = min(TRIM_MAX_MS, max(TRIM_MIN_MS, TRIM_BASE_MS + TRIM_PER_CHAR_MS * len(c[2])))
-        if c[1] - c[0] > allowed + TRIM_SLACK_MS:
-            c[1] = c[0] + allowed
-            report["trimmed_durations"] += 1
+    _trim_long(out, report)
 
     # 7. drop pure hallucination cues
     kept = []
@@ -224,6 +374,12 @@ def clean(cues):
         else:
             kept.append(c)
     out = kept
+
+    # 8-9. readability: wrap/split long cues, then give fast cues more time
+    out = reflow(out, report)
+    out = _collapse_stuck(out, report)   # splitting can create adjacent duplicates; keeps clean() idempotent
+    _trim_long(out, report)              # ...and a merged span must be re-trimmed, or the next run would
+    out = extend_for_reading(out, report)
 
     report["cues_out"] = len(out)
     return out, report

@@ -64,6 +64,11 @@
 !whisper-vocab.py
 # Regression tests for the whisper SRT cleaner/name-correction (fixtures = real failures seen on cartoon output)
 !test_whisper_srt.py
+# Subtitle readability (reflow/wrap/split, "Castilian" title via <video>.es.Castilian.srt) lives in whisper_srt.py + tests above.
+# Baked-in side-bar detection + fix for "fake 16:9" (4:3 picture pillarboxed inside a 16:9 frame, e.g. Sargento Keroro):
+# read-only detector + in-place crop/stretch fixer with per-file geometry + output verification.
+!detect-pillarbox.py
+!depillarbox.py
 # In-place library normalizer for the Castilian library (stretch 4:3->16:9, remux to mkv,
 # tag ONLY the Castilian audio track) -- Jenkins job "castilianize", dry-run by default.
 !castilianize.py

@@ -127,7 +127,8 @@ def build(show_dir, min_episodes=MIN_EPISODES):
     lower_count = collections.Counter()
     tok_count = collections.Counter()
     example = {}
-    for srt in glob.glob(os.path.join(glob.escape(show_dir), "**", "*.es.srt"), recursive=True):
+    for srt in (glob.glob(os.path.join(glob.escape(show_dir), "**", "*.es.srt"), recursive=True)
+                + glob.glob(os.path.join(glob.escape(show_dir), "**", "*.es.Castilian.srt"), recursive=True)):
         cues = S.parse_srt(open(srt, encoding="utf-8", errors="replace").read())
         for _s, _e, text in cues:
             for m in WORD_RE.finditer(text):
@@ -144,7 +145,8 @@ def build(show_dir, min_episodes=MIN_EPISODES):
                     per_ep_cap[w].add(srt)
     # a real recurring name shows up in a sizeable share of episodes; stray
     # mishearings ("Gayas", English "Courage") appear in only a few
-    n_srt = len(glob.glob(os.path.join(glob.escape(show_dir), "**", "*.es.srt"), recursive=True))
+    n_srt = (len(glob.glob(os.path.join(glob.escape(show_dir), "**", "*.es.srt"), recursive=True))
+             + len(glob.glob(os.path.join(glob.escape(show_dir), "**", "*.es.Castilian.srt"), recursive=True)))
     min_episodes = max(min_episodes, int(n_srt * 0.15))
     tier3 = []
     # most widespread first, so among spelling variants of one name the most frequent

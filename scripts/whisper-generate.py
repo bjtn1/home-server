@@ -12,11 +12,11 @@ Per video whose probe verdict is NEEDS:
      step 3). Timeout = duration + 5 min so a hung server fails loudly.
   3. whisper_srt.clean(): collapse stuck/duplicate loops, truncate intra-cue
      loops, flag suspicious repeats/phrases.
-  4. Atomically write <video stem>.es.srt next to the video (Jellyfin-standard
-     sidecar; nothing is muxed or re-encoded, fully reversible: delete the file).
+  4. Atomically write <video stem>.es.Castilian.srt next to the video (Jellyfin shows the extra
+     token as the track title, so the selector says "Castilian"; sidecar; nothing is muxed or re-encoded, fully reversible: delete the file).
   5. Record a JSON entry in the cache dir keyed by show+episode identity (NOT
      path/mtime -- files get renamed/restaged) holding the written file's
-     sha256. Overwrite protection: an existing .es.srt is replaced ONLY if it is
+     sha256. Overwrite protection: an existing .es.Castilian.srt / legacy .es.srt is replaced ONLY if it is
      recorded there and its hash is unchanged (i.e. it is still our own output).
      Anything else (a hand-made or downloaded subtitle) is never touched.
 
@@ -57,6 +57,26 @@ CACHE_DIR = os.environ.get("WHISPER_CACHE_DIR", "/home/bjtn/whisper-subtitle-cac
 TMP_DIR = os.environ.get("WHISPER_TMP", "/tmp")
 LOG = os.environ.get("WHISPER_LOG", "/home/bjtn/logs/whisper-generate.log")
 LOCK = "/tmp/whisper-generate.lock"
+
+# Jellyfin parses "<video>.es.Castilian.srt" as language=Spanish, TITLE="Castilian" (verified against its DB), so our
+# own subtitles are labelled "Castilian" in the subtitle selector, distinct from other Spanish tracks. Files that
+# are NOT ours keep whatever name they have. LEGACY_SUFFIX is the name used before 2026-09-20.
+SRT_SUFFIX = ".es.Castilian.srt"
+LEGACY_SUFFIX = ".es.srt"
+
+
+def sidecar_target(video):
+    return os.path.splitext(video)[0] + SRT_SUFFIX
+
+
+def existing_sidecar(video):
+    """The subtitle file we would own for this video: the new name if present, else the legacy name, else None."""
+    stem = os.path.splitext(video)[0]
+    for suffix in (SRT_SUFFIX, LEGACY_SUFFIX):
+        if os.path.exists(stem + suffix):
+            return stem + suffix
+    return None
+
 EP_RE = re.compile(r"S(\d{1,3})E(\d{1,3})(?:-?E(\d{1,3}))?", re.I)
 PROMPT_MAX_CHARS = 700  # ~224 tokens; whisper keeps the LAST tokens if over
 
@@ -135,13 +155,14 @@ def known_variants(path):
 
 def process(path, res, args):
     stem = os.path.splitext(path)[0]
-    target = stem + ".es.srt"
+    target = stem + SRT_SUFFIX
     rec = load_cache(path)
 
-    if os.path.exists(target):
-        ours = rec and rec.get("status") == "ok" and rec.get("srt_sha256") == sha256(target)
+    existing = existing_sidecar(path)
+    if existing:
+        ours = rec and rec.get("status") == "ok" and rec.get("srt_sha256") == sha256(existing)
         if not ours:
-            log(f"SKIP (existing {os.path.basename(target)} is not our unchanged output; never overwritten): {path}")
+            log(f"SKIP (existing {os.path.basename(existing)} is not our unchanged output; never overwritten): {path}")
             return "skipped"
 
     dur = res["duration_min"]
@@ -169,6 +190,9 @@ def process(path, res, args):
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(srt)
         os.replace(tmp, target)
+        legacy = stem + LEGACY_SUFFIX
+        if existing == legacy and os.path.exists(legacy):   # only reachable when it was verified as ours above
+            os.remove(legacy)
         save_cache(path, {
             "status": "ok", "video": path, "srt": target, "srt_sha256": sha256(target),
             "audio_track": res["audio_index"], "audio_name": res["audio_name"],
@@ -199,37 +223,46 @@ def process(path, res, args):
 
 
 def postprocess(args):
-    """Offline pass over our OWN output (cache record + matching sha256 only)."""
+    """Offline pass over our OWN output (cache record + matching sha256 only): re-run the cleaner (incl. reflow),
+    apply curated name fixes, and migrate the file to the SRT_SUFFIX name. Never touches files that are not ours."""
     files = [args.file] if args.file else list(M.walk_videos(args.roots, args.show))
-    n_changed = n_same = n_skipped = 0
+    n_changed = n_same = n_skipped = n_renamed = 0
     for path in files:
-        target = os.path.splitext(path)[0] + ".es.srt"
+        stem = os.path.splitext(path)[0]
+        target = stem + SRT_SUFFIX
+        src = existing_sidecar(path)
         rec = load_cache(path)
-        if not (os.path.exists(target) and rec and rec.get("status") == "ok"
-                and rec.get("srt_sha256") == sha256(target)):
+        if not (src and rec and rec.get("status") == "ok" and rec.get("srt_sha256") == sha256(src)):
             n_skipped += 1
             continue
-        raw = S.parse_srt(open(target, encoding="utf-8").read())
+        old_text = open(src, encoding="utf-8").read()
+        raw = S.parse_srt(old_text)
         cleaned, report = S.clean(raw)
         cleaned, fixes = S.correct_names(cleaned, known_variants(path))
         new = S.format_srt(cleaned)
-        if new == open(target, encoding="utf-8").read():
+        needs_rename = src != target
+        if new == old_text and not needs_rename:
             n_same += 1
             continue
         if args.dry_run:
-            log(f"would change: {os.path.basename(target)} ({sum(n for _a, _b, n in fixes)} name fixes, "
-                f"{len(report['dropped_hallucinations'])} hallucination cue(s) dropped)")
+            log(f"would change: {os.path.basename(target)} ({len(raw)}->{len(cleaned)} cues, "
+                f"{sum(n for _a, _b, n in fixes)} name fixes{', rename' if needs_rename else ''})")
             n_changed += 1
+            n_renamed += needs_rename
             continue
         tmp = target + ".part"
         open(tmp, "w", encoding="utf-8").write(new)
         os.replace(tmp, target)
-        rec.update({"srt_sha256": sha256(target), "cues_written": len(cleaned), "name_fixes": fixes[:20],
+        if needs_rename and os.path.exists(src):
+            os.remove(src)
+            n_renamed += 1
+        rec.update({"srt": target, "srt_sha256": sha256(target), "cues_written": len(cleaned), "name_fixes": fixes[:20],
                     "dropped_hallucinations": report["dropped_hallucinations"],
+                    "wrapped_cues": report.get("wrapped_cues"), "split_cues": report.get("split_cues"),
                     "postprocessed_at": time.strftime("%F %T")})
         save_cache(path, rec)
         n_changed += 1
-    log(f"postprocess summary: changed={n_changed} unchanged={n_same} skipped(not ours)={n_skipped}")
+    log(f"postprocess summary: changed={n_changed} (renamed={n_renamed}) unchanged={n_same} skipped(not ours)={n_skipped}")
 
 
 def main():
@@ -240,9 +273,9 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--regen", action="store_true",
-                    help="also redo files whose .es.srt is our own unchanged output (e.g. after a cleaner fix)")
+                    help="also redo files whose subtitle is our own unchanged output (e.g. after a cleaner fix)")
     ap.add_argument("--postprocess", action="store_true",
-                    help="no transcription: re-run the cleaner + curated name fixes on our own existing .es.srt files")
+                    help="no transcription: re-run the cleaner (incl. line reflow) + curated name fixes on our own existing subtitles and migrate them to the .es.Castilian.srt name")
     ap.add_argument("--beam-size", type=int, default=5)
     ap.add_argument("--min-cpm", type=float, default=M.DEFAULT_MIN_CUES_PER_MIN)
     args = ap.parse_args()
@@ -273,9 +306,9 @@ def main():
             log(f"PROBE FAILED: {path}: {e}")
             continue
         if args.regen and res["verdict"] == "OK" and res["audio_index"] is not None:
-            tgt = os.path.splitext(path)[0] + ".es.srt"
+            tgt = existing_sidecar(path)
             rec = load_cache(path)
-            if os.path.exists(tgt) and rec and rec.get("status") == "ok" and rec.get("srt_sha256") == sha256(tgt):
+            if tgt and rec and rec.get("status") == "ok" and rec.get("srt_sha256") == sha256(tgt):
                 res["verdict"] = "NEEDS"  # our own output: safe to redo
         if res["verdict"] != "NEEDS":
             done["not-needed"] += 1

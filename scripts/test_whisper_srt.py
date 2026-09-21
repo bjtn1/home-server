@@ -126,5 +126,68 @@ class Names(unittest.TestCase):
         self.assertEqual(fixes, [])
 
 
+class Reflow(unittest.TestCase):
+    NARRATION = "Cuando todo parecía perdido, un guerrero humano, Eon, equipado con un poderoso puño, se alzó victorioso, destruyendo al general y a sí mismo."
+
+    def _lines_ok(self, cues):
+        return all(c[2].count("\n") <= 1 and all(len(l) <= W.MAX_LINE for l in c[2].split("\n")) for c in cues)
+
+    def test_long_narration_split_into_readable_cues(self):
+        # Iron Kid S01E01: 141 chars on one line held 10.5 s filled half the screen
+        out, rep = W.clean([cue(15200, 25700, self.NARRATION)])
+        self.assertGreater(len(out), 1)
+        self.assertTrue(self._lines_ok(out))
+        self.assertEqual(" ".join(" ".join(c[2].split()) for c in out), self.NARRATION)   # no word lost or changed
+        self.assertEqual(out[0][0], 15200)                                                  # starts where it started
+        self.assertLessEqual(out[-1][1], 25700)
+        self.assertTrue(all(b[0] >= a[1] for a, b in zip(out, out[1:])))                    # no overlaps introduced
+        self.assertEqual(rep["split_cues"], 1)
+
+    def test_medium_cue_wrapped_to_two_balanced_lines_not_split(self):
+        out, _ = W.clean([cue(0, 5000, "La humanidad aplastada por el ejército de un tiránico cíbor")])
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0][2].count("\n"), 1)
+        self.assertTrue(self._lines_ok(out))
+
+    def test_short_cue_untouched(self):
+        out, _ = W.clean([cue(1000, 3500, "¡Vamos, Scooby!")])
+        self.assertEqual(out[0], [1000, 3500, "¡Vamos, Scooby!"])
+
+    def test_unspaced_hallucination_loop_collapsed_and_bounded(self):
+        # Keroro S04E36: one 315-char 'cucucu...' token with no spaces
+        out, _ = W.clean([cue(0, 5000, "Cu" * 150)])
+        self.assertLessEqual(len(out[0][2]), 12)
+        out2, _ = W.clean([cue(0, 5000, "x" * 400)])   # unbreakable garbage must still never exceed 2 lines
+        self.assertTrue(self._lines_ok(out2))
+
+    def test_fast_cue_extended_only_into_the_gap(self):
+        out, rep = W.clean([cue(0, 600, "Esto es una frase bastante larga para leer"), cue(2000, 4000, "Vale.")])
+        # 43 chars at ~17 cps needs ~2.5 s, more than the 1.4 s available, so it stretches exactly to the cap
+        self.assertEqual(out[0][1], 2000 - W.MIN_GAP_MS)         # ...and never into the next cue
+        self.assertEqual(out[1], [2000, 4000, "Vale."])
+
+    def test_extension_does_not_create_mergeable_duplicates(self):
+        # identical neighbours must keep a gap >= STUCK_GAP_MS or the next run would merge them
+        same = "No pienso ir a esa fiesta de disfraces mañana por la noche"   # ~3.5 s of reading time
+        out, _ = W.clean([cue(0, 400, same), cue(3600, 5000, same)])
+        self.assertEqual(len(out), 2)
+        self.assertGreater(out[1][0] - out[0][1], W.STUCK_GAP_MS)   # extended, but leaves a gap the collapse rule won't merge
+        self.assertEqual(W.clean(out)[0], out)                       # and a second pass leaves it alone
+
+    def test_clean_is_idempotent_including_split_duplicates(self):
+        # a cue that repeats its own sentence splits into two identical touching cues -> must merge, then stay merged
+        rep = "El emperador de la Alius, el emperador de la Alius, el emperador de la Alius, el emperador de la Alius."
+        once, _ = W.clean([cue(0, 9000, rep), cue(12000, 13000, "Vale."), cue(14000, 30000, self.NARRATION)])
+        twice, _ = W.clean(once)
+        self.assertEqual(once, twice)
+
+    def test_nested_counting_hallucination_is_stable(self):
+        # Detective Conan S11E04: whisper counted "6, 7, 1, 2, 3, 1, 2, 3, ..." -- loops nested in loops
+        junk = "6, 7, 1, 2, 3, 4, 5, 6, 7, " + "1, 2, 3, " * 12 + "1"
+        once, _ = W.clean([cue(0, 5000, junk)])
+        self.assertLess(len(" ".join(once[0][2].split())), len(junk) / 2)
+        self.assertEqual(W.clean(once)[0], once)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

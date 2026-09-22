@@ -1,0 +1,21 @@
+services:
+  authelia:
+    image: ghcr.io/authelia/authelia:latest
+    container_name: authelia
+    restart: unless-stopped
+    command: ["--config", "/config/configuration.yml,/config/access.yml"]
+    environment:
+      - AUTHELIA_JWT_SECRET=${JWT_SECRET}
+      - AUTHELIA_SESSION_SECRET=${SESSION_SECRET}
+      - AUTHELIA_STORAGE_ENCRYPTION_KEY=${STORAGE_ENCRYPTION_KEY}
+      - TZ=America/New_York
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./config:/config
+    networks:
+      - bjtn-proxy
+
+networks:
+  bjtn-proxy:
+    external: true

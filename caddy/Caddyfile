@@ -19,6 +19,35 @@
   }
 }
 
+# gate: forwards every request to Authelia first. default_policy: deny in
+# authelia/config/access.yml means nothing behind this is reachable by anyone not
+# explicitly granted -- imported into every site block below, including this file's own
+# admin/control-panel entries. auth.bjtn.xyz itself (the login portal) must NEVER import
+# this, or it becomes an infinite redirect loop.
+(authelia) {
+  forward_auth authelia:9091 {
+    uri /api/verify?rd=https://auth.bjtn.xyz
+    copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+  }
+}
+
+########################################################
+################### AUTHELIA ############################
+########################################################
+
+# the login portal itself -- NOT gated (see the snippet's comment above)
+auth.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy authelia:9091
+}
+
+# who-can-reach-what control panel -- bjtn only (see authelia/config/access.yml)
+access.bjtn.xyz {
+  import porkbun_tls
+  import authelia
+  reverse_proxy access-control:8770
+}
+
 ########################################################
 ################### PIHOLE #############################
 ########################################################
@@ -27,8 +56,17 @@
 pihole.bjtn.xyz,
 pi.bjtn.xyz {
   import porkbun_tls
-  redir / /admin/
-  reverse_proxy pihole:80
+  # route{} forces written order -- Caddy's DEFAULT directive order runs redir before
+  # forward_auth (confirmed against Caddy's own docs), so without this the redirect to
+  # /admin/ fired before the auth check ever ran, letting anyone straight into Pi-hole's
+  # admin UI. This is the only block in this file combining forward_auth with a directive
+  # that has a default order ahead of it -- every other block is a bare reverse_proxy,
+  # which forward_auth already precedes by default (verified live for all of them).
+  route {
+    import authelia
+    redir / /admin/
+    reverse_proxy pihole:80
+  }
 }
 
 ########################################################
@@ -38,6 +76,7 @@ pi.bjtn.xyz {
 # for the thinkpad
 syncthing.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy syncthing:8384 {
     # we need this because otherwise we'll get a "host check error"
     header_up Host {upstream_hostport}
@@ -47,6 +86,7 @@ syncthing.bjtn.xyz {
 # kindle's syncthing GUI
 kindle.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy 100.101.80.38:8384 {
     # we need this because otherwise we'll get a "host check error"
     header_up Host {upstream_hostport}
@@ -56,6 +96,7 @@ kindle.bjtn.xyz {
 # steamdeck's syncthing GUI
 steamdeck.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy 100.65.182.44:8384 {
     # we need this because otherwise we'll get a "host check error"
     header_up Host {upstream_hostport}
@@ -65,6 +106,7 @@ steamdeck.bjtn.xyz {
 # ayn thor syncthing GUI
 thor.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy https://100.83.201.58:8384 {
     transport http {
       tls_insecure_skip_verify
@@ -75,6 +117,7 @@ thor.bjtn.xyz {
 # music tablet's syncthing GUI
 music.bjtn.xyz {
   import porkbun_tls
+  import authelia
 	reverse_proxy 100.74.227.72:8384 {
     # we need this because otherwise we'll get a "host check error"
 		header_up Host {upstream_hostport}
@@ -87,57 +130,68 @@ music.bjtn.xyz {
 
 sonarr.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy sonarr:8989
 }
 
 radarr.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy radarr:7878
 }
 
 prowlarr.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy prowlarr:9696
 }
 
 bazarr.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy bazarr:6767
 }
 
 jellyfin.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy jellyfin:8096
 }
 
 seerr.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy seerr:5055
 }
 
 shelfmark.bjtn.xyz,
 books.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy shelfmark:8084
 }
 
 qbit.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy gluetun:8181
 }
 
 nzb.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy gluetun:8080
 }
 
 cleanuparr.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy cleanuparr:11011
 }
 
 youtarr.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy youtarr:3011
 }
 
@@ -149,31 +203,37 @@ youtarr.bjtn.xyz {
 immich.bjtn.xyz,
 photos.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy immich:2283
 }
 
 beszel.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy beszel:8090
 }
 
 glances.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy glances:61208
 }
 
 pause.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy downloads-control:8765
 }
 
 search.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy arr-control:8767
 }
 
 jenkins.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy jenkins:8080
 }
 
@@ -187,18 +247,21 @@ jenkins.bjtn.xyz {
 dozzle.bjtn.xyz,
 logs.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy dozzle:8080
 }
 
 home.bjtn.xyz,
 homarr.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy homarr:7575
 }
 
 upsnap.bjtn.xyz,
 wol.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy 192.168.1.194:8091
 }
 
@@ -209,16 +272,19 @@ wol.bjtn.xyz {
 romm.bjtn.xyz,
 roms.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy romm:8080
 }
 
 scrutiny.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy scrutiny-web:8080
 }
 
 arcane.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy arcane:3552
 }
 
@@ -232,6 +298,7 @@ cloud.bjtn.xyz,
 nc.bjtn.xyz,
 nextcloud.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy nextcloud:80 {
     header_up X-Forwarded-Proto https
   }
@@ -239,5 +306,6 @@ nextcloud.bjtn.xyz {
 
 whisper.bjtn.xyz {
   import porkbun_tls
+  import authelia
   reverse_proxy 100.117.170.34:8178
 }

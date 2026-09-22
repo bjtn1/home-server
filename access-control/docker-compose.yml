@@ -1,0 +1,50 @@
+services:
+  access-control:
+    build: .
+    container_name: access-control
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      - docker-proxy
+    environment:
+      - ADMIN_USER=bjtn
+      - DOCKER_PROXY_URL=http://access-control-docker-proxy:2375
+    volumes:
+      - ./state:/state
+      # single-file bind mount -- this container can write access.yml and NOTHING else in
+      # Authelia's config dir (no users_database.yml, no session db, no secrets).
+      - ../authelia/config/access.yml:/authelia/access.yml
+    networks:
+      - bjtn-proxy
+      - docker-proxy-net
+
+  # Authelia does NOT hot-reload its config files (confirmed: this is a real, documented
+  # limitation, not an oversight) -- a restart is genuinely required for a rule change to
+  # take effect. Rather than give access-control the real Docker socket (root-equivalent),
+  # this proxy exposes ONLY the container-restart action: no exec, no images, no volumes,
+  # no other container's logs/files. It sits on its own internal-only network that nothing
+  # else can reach.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: access-control-docker-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - POST=1
+      - EXEC=0
+      - IMAGES=0
+      - VOLUMES=0
+      - NETWORKS=0
+      - SERVICES=0
+      - SYSTEM=0
+      - BUILD=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-proxy-net
+
+networks:
+  bjtn-proxy:
+    external: true
+  docker-proxy-net:
+    internal: true

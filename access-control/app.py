@@ -16,7 +16,9 @@ GRANTABLE is a hardcoded allowlist, not derived from the Caddyfile -- so this pa
 never expose an app (Arcane, Prowlarr, etc.) that wasn't deliberately added here first.
 Adding a brand-new PERSON (an Authelia account with a password) is a separate, rarer,
 one-time step done directly in users_database.yml -- this panel only toggles which apps an
-EXISTING account can reach.
+EXISTING account can reach. It DOES read users_database.yml (mounted read-only, a second
+single-file mount alongside access.yml) to offer a real, type-to-search pick-list of actual
+accounts, so "add a person" can't silently create a rule for a login that doesn't exist.
 """
 import json
 import os
@@ -30,6 +32,9 @@ import yaml
 
 STATE = "/state/access.json"
 RULES_OUT = "/authelia/access.yml"
+USERS_DB = "/authelia/users_database.yml"  # read-only mount -- this app can only READ it,
+                                            # never write; adding a brand-new login is still
+                                            # a separate, deliberate step done on the server.
 ADMIN_USER = os.environ.get("ADMIN_USER", "bjtn")
 DOCKER_PROXY_URL = os.environ.get("DOCKER_PROXY_URL", "")
 
@@ -52,6 +57,17 @@ def load():
             return json.load(f)
     except (OSError, ValueError):
         return {}
+
+
+def real_users():
+    """Every actual Authelia login (read-only), so the panel only ever offers picking from
+    accounts that really exist -- never a free-typed name that silently goes nowhere."""
+    try:
+        with open(USERS_DB, encoding="utf-8") as f:
+            doc = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return set()
+    return set((doc.get("users") or {}).keys())
 
 
 def save(access):
@@ -116,6 +132,16 @@ def render(access):
         )
     if not access:
         people_html = '<p class="empty">Nobody has any app access yet. Add a person below.</p>'
+
+    # pick-list = real Authelia accounts, minus the admin and anyone already listed above --
+    # native <input list=...> keeps this a normal type-to-search text box (nothing removed),
+    # it just also offers a dropdown of names that are guaranteed to be real accounts.
+    pickable = sorted(real_users() - {ADMIN_USER} - set(access))
+    options_html = "".join(f'<option value="{u}">' for u in pickable)
+    if pickable:
+        add_hint = "Pick an existing login, or type one below."
+    else:
+        add_hint = "No un-added Authelia logins found -- creating a brand-new login is still a one-time step on the server."
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Access</title>
@@ -143,10 +169,12 @@ def render(access):
 <h1>Who can reach what</h1>
 {people_html}
 <form method="post" class="add">
-  <input name="newperson" placeholder="username (must already have an Authelia login)" pattern="[a-z][a-z0-9_-]{{0,31}}" required>
+  <input name="newperson" list="known-users" placeholder="username" pattern="[a-z][a-z0-9_-]{{0,31}}" required autocomplete="off">
+  <datalist id="known-users">{options_html}</datalist>
   <button class="addbtn" formaction="/add">add</button>
 </form>
-<p class="hint">{ADMIN_USER} always has access to everything and isn't shown here.
+<p class="hint">{add_hint}
+{ADMIN_USER} always has access to everything and isn't shown here.
 Adding a brand-new person's login (not just toggling their apps) still needs a one-time step on the server.</p>
 </body></html>"""
 
@@ -181,7 +209,9 @@ class Handler(BaseHTTPRequestHandler):
             body_len = int(self.headers.get("Content-Length", 0))
             form = parse_qs(self.rfile.read(body_len).decode())
             name = form.get("newperson", [""])[0].strip().lower()
-            if NAME_RE.match(name) and name != ADMIN_USER and name not in access:
+            # must be a REAL Authelia login, not just well-formed text -- otherwise this would
+            # silently grant a rule for a user: subject that can never actually log in as anyone
+            if NAME_RE.match(name) and name in real_users() and name != ADMIN_USER and name not in access:
                 access[name] = []
                 save(access)
 

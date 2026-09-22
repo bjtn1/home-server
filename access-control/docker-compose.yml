@@ -12,8 +12,11 @@ services:
     volumes:
       - ./state:/state
       # single-file bind mount -- this container can write access.yml and NOTHING else in
-      # Authelia's config dir (no users_database.yml, no session db, no secrets).
+      # Authelia's config dir (no session db, no secrets).
       - ../authelia/config/access.yml:/authelia/access.yml
+      # read-only: lets the panel offer a real pick-list of actual logins; :ro means this
+      # container cannot touch the password hashes in here even if it wanted to.
+      - ../authelia/config/users_database.yml:/authelia/users_database.yml:ro
     networks:
       - bjtn-proxy
       - docker-proxy-net

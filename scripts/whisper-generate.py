@@ -186,7 +186,19 @@ def process(path, res, args):
             # (fixes cues placed tens of seconds early/late after long silences; see whisper_chunks.py)
             def _one(p):
                 return C.transcribe(p, timeout=300, prompt=prompt, extra=extra)[0]
-            raw, chunk_stats = K.transcribe_chunked(wav, _one, S.parse_srt)
+            segs = K.load_vad(path, res["audio_index"])
+            vad_cached = segs is not None
+            if segs is None:
+                segs = K.detect_speech(wav)
+                K.save_vad(path, res["audio_index"], segs)
+            if getattr(args, "words", False):
+                def _words(p):
+                    ex = dict(extra or {}, max_len="1", split_on_word="true")
+                    return C.transcribe(p, timeout=300, prompt=prompt, extra=ex)[0]
+                raw, chunk_stats = K.transcribe_chunked_words(wav, _words, S.parse_srt, segs=segs)
+            else:
+                raw, chunk_stats = K.transcribe_chunked(wav, _one, S.parse_srt, segs=segs)
+            chunk_stats["vad_cached"] = vad_cached
             secs = time.time() - t0
         else:
             text, secs = C.transcribe(wav, timeout=timeout, prompt=prompt, extra=extra)
@@ -288,6 +300,8 @@ def main():
     ap.add_argument("--chunked", action="store_true",
                     help="VAD-chunked transcription: only speech is sent to whisper and timestamps are mapped back "
                          "(needs ~/venvs/vad; fixes mistimed/hallucinated cues after long silences)")
+    ap.add_argument("--words", action="store_true",
+                    help="with --chunked: rebuild cues from per-word timestamps (accurate start/end) instead of segment times")
     ap.add_argument("--postprocess", action="store_true",
                     help="no transcription: re-run the cleaner (incl. line reflow) + curated name fixes on our own existing subtitles and migrate them to the .es.Castilian.srt name")
     ap.add_argument("--beam-size", type=int, default=5)

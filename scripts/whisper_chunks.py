@@ -12,6 +12,7 @@ windows of <= MAX_PACK_S seconds separated by SEP_S of silence, so whisper never
 Pure standard library (the VAD runs in its own venv via a subprocess). The transcriber is injected, so all of this is
 testable without a whisper server.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -35,6 +36,35 @@ def detect_speech(wav_path, timeout=1800):
     if r.returncode != 0:
         raise RuntimeError("VAD failed: " + r.stderr.strip()[-200:])
     return [(float(a), float(b)) for a, b in json.loads(r.stdout)]
+
+
+# --- VAD result cache: speech detection is CPU work (~21 s/episode); computing it ahead of the GPU keeps the GPU busy ---
+VAD_CACHE = os.path.expanduser("~/whisper-subtitle-cache/vad")
+VAD_SIG = "silero-v5-th0.5-sil500-pad120-min250"     # bump when speech_vad.py parameters change (invalidates the cache)
+
+
+def _vad_path(video, audio_idx):
+    st = os.stat(video)
+    key = f"{os.path.abspath(video)}|{st.st_size}|{int(st.st_mtime)}|{audio_idx}|{VAD_SIG}"
+    return os.path.join(VAD_CACHE, hashlib.sha1(key.encode("utf-8")).hexdigest()[:24] + ".json")
+
+
+def load_vad(video, audio_idx):
+    """Cached speech regions for this exact file (path+size+mtime) and audio track, or None."""
+    try:
+        with open(_vad_path(video, audio_idx), encoding="utf-8") as f:
+            return [(float(a), float(b)) for a, b in json.load(f)["segments"]]
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def save_vad(video, audio_idx, segs):
+    os.makedirs(VAD_CACHE, exist_ok=True)
+    path = _vad_path(video, audio_idx)
+    tmp = path + ".part"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"video": os.path.abspath(video), "audio": audio_idx, "sig": VAD_SIG, "segments": [[a, b] for a, b in segs]}, f)
+    os.replace(tmp, path)
 
 
 def merge_regions(segs, gap=MERGE_GAP_S):
@@ -179,3 +209,96 @@ def transcribe_chunked(wav_path, transcribe_fn, parse_srt, segs=None, log=None):
     cues.sort(key=lambda c: (c[0], c[1]))
     speech_s = sum(b - a for a, b in merge_regions(segs))
     return cues, {"packs": len(packs), "speech_s": round(speech_s, 1), "regions": len(merge_regions(segs))}
+
+
+# --- word-level timing: build cues from per-word timestamps instead of trusting segment starts -------------------------
+SENT_END_CHARS = ".!?…"
+
+
+def words_from_srt(parse_srt, text):
+    """Per-word SRT (whisper server with max_len=1, split_on_word) -> [(start_s, end_s, word)], empties dropped."""
+    out = []
+    for s, e, w in parse_srt(text):
+        w = " ".join(w.split())
+        if w:
+            out.append((s / 1000.0, e / 1000.0, w))
+    return out
+
+
+def place_word(pack, s, e):
+    """Pack-time word -> (orig_start_s, orig_end_s) inside the piece it overlaps most; None if it lies in inserted silence."""
+    best = None
+    for a, b, off in pack:
+        o = min(e, off + (b - a)) - max(s, off)
+        if o > 0 and (best is None or o > best[0]):
+            best = (o, a, b, off)
+    if best is None or best[0] < min(0.05, max(e - s, 0.02) * 0.5):
+        return None
+    _, a, b, off = best
+    st = a + (max(s, off) - off)
+    en = a + (min(e, off + (b - a)) - off)
+    return st, max(en, st + 0.05)
+
+
+def group_words(words, max_chars=84, pause_s=0.7, max_dur_s=7.0):
+    """[(start_s, end_s, word)] -> cues [[start_ms, end_ms, text]] whose times are the REAL first/last word times.
+    A cue breaks at a pause, after a finished sentence (once it has some substance), at a comma near the length limit,
+    at max_chars (two full lines) or max_dur_s."""
+    cues, cur = [], []
+
+    def flush(upto=None):
+        nonlocal cur
+        part = cur if upto is None else cur[:upto]
+        rest = [] if upto is None else cur[upto:]
+        if part:
+            cues.append([int(round(part[0][0] * 1000)), int(round(part[-1][1] * 1000)), " ".join(w for _, _, w in part)])
+        cur = rest
+
+    for w in words:
+        if cur:
+            gap = w[0] - cur[-1][1]
+            text = " ".join(x for _, _, x in cur)
+            prev = cur[-1][2]
+            ended = prev.rstrip('"»)”').endswith(tuple(SENT_END_CHARS))
+            if gap > pause_s or (ended and (len(text) >= 24 or gap >= 0.4)) or w[1] - cur[0][0] > max_dur_s:
+                flush()
+            elif len(text) + 1 + len(w[2]) > max_chars:
+                # prefer to cut after a comma in the last third of the cue, else here
+                cut = next((i + 1 for i in range(len(cur) - 1, -1, -1)
+                            if cur[i][2].rstrip('"»)”').endswith((",", ";", ":")) and i + 1 >= len(cur) * 2 // 3), None)
+                flush(cut)
+        cur.append(w)
+    flush()
+    return cues
+
+
+def transcribe_chunked_words(wav_path, transcribe_words_fn, parse_srt, segs=None, log=None):
+    """Like transcribe_chunked, but transcribe_words_fn(wav) must return a PER-WORD SRT; cues are rebuilt from word times.
+    -> (cues_ms, stats)."""
+    with wave.open(wav_path) as w:
+        if (w.getframerate(), w.getnchannels(), w.getsampwidth()) != (SR, 1, 2):
+            raise ValueError("expected 16 kHz mono 16-bit WAV")
+        frames = w.readframes(w.getnframes())
+    segs = detect_speech(wav_path) if segs is None else segs
+    packs = plan_packs(segs)
+    all_words = []
+    dropped = 0
+    for n, pack in enumerate(packs):
+        tmp = tempfile.mktemp(suffix=".wav", dir=os.path.dirname(wav_path) or None)
+        try:
+            build_pack_wav(frames, pack, tmp)
+            text = transcribe_words_fn(tmp)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        for s, e, word in words_from_srt(parse_srt, text):
+            placed = place_word(pack, s, e)
+            if placed is None:
+                dropped += 1
+                continue
+            all_words.append((placed[0], placed[1], word))
+        if log:
+            log(f"chunk {n + 1}/{len(packs)}")
+    all_words.sort(key=lambda x: (x[0], x[1]))
+    cues = group_words(all_words)
+    return cues, {"packs": len(packs), "words": len(all_words), "words_dropped_in_silence": dropped, "word_level": True}

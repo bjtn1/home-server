@@ -144,5 +144,36 @@ class EndToEnd(unittest.TestCase):
         self.assertGreater(cues[0][1], cues[0][0])
 
 
+class VadCache(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self._old = K.VAD_CACHE
+        K.VAD_CACHE = os.path.join(self.d, "vad")
+        self.video = os.path.join(self.d, "ep.mkv")
+        open(self.video, "wb").write(b"x" * 100)
+
+    def tearDown(self):
+        K.VAD_CACHE = self._old
+
+    def test_roundtrip(self):
+        self.assertIsNone(K.load_vad(self.video, 0))
+        K.save_vad(self.video, 0, [(1.0, 2.5), (10.0, 12.0)])
+        self.assertEqual(K.load_vad(self.video, 0), [(1.0, 2.5), (10.0, 12.0)])
+
+    def test_different_audio_track_is_a_different_entry(self):
+        K.save_vad(self.video, 0, [(1.0, 2.0)])
+        self.assertIsNone(K.load_vad(self.video, 1))
+
+    def test_changed_file_invalidates_the_cache(self):
+        K.save_vad(self.video, 0, [(1.0, 2.0)])
+        open(self.video, "ab").write(b"more")                 # size changes (e.g. the file was re-encoded)
+        self.assertIsNone(K.load_vad(self.video, 0))
+
+    def test_corrupt_cache_file_is_ignored_not_fatal(self):
+        K.save_vad(self.video, 0, [(1.0, 2.0)])
+        open(K._vad_path(self.video, 0), "w").write("{not json")
+        self.assertIsNone(K.load_vad(self.video, 0))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

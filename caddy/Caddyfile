@@ -19,41 +19,6 @@
   }
 }
 
-# gate: forwards every request to Authelia first. default_policy: deny in
-# authelia/config/access.yml means nothing behind this is reachable by anyone not
-# explicitly granted -- imported into every site block below, including this file's own
-# admin/control-panel entries. auth.bjtn.xyz itself (the login portal) must NEVER import
-# this, or it becomes an infinite redirect loop.
-#
-# Non-browser clients (native apps, the Jenkins agent, host scripts) can't do an
-# interactive Authelia login, so a few blocks below carve out their API/protocol
-# paths with a `handle @bypass` ahead of the gated `handle`. Every carved-out path
-# was verified to still demand the app's OWN credentials (token/API key/agent
-# secret -> 401/403 without) -- the carve-outs drop the second gate, not the only one.
-(authelia) {
-  forward_auth authelia:9091 {
-    uri /api/verify?rd=https://auth.bjtn.xyz
-    copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
-  }
-}
-
-########################################################
-################### AUTHELIA ############################
-########################################################
-
-# the login portal itself -- NOT gated (see the snippet's comment above)
-auth.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy authelia:9091
-}
-
-# who-can-reach-what control panel -- bjtn only (see authelia/config/access.yml)
-access.bjtn.xyz {
-  import porkbun_tls
-  import authelia
-  reverse_proxy access-control:8770
-}
-
 ########################################################
 ################### PIHOLE #############################
 ########################################################
@@ -62,17 +27,8 @@ access.bjtn.xyz {
 pihole.bjtn.xyz,
 pi.bjtn.xyz {
   import porkbun_tls
-  # route{} forces written order -- Caddy's DEFAULT directive order runs redir before
-  # forward_auth (confirmed against Caddy's own docs), so without this the redirect to
-  # /admin/ fired before the auth check ever ran, letting anyone straight into Pi-hole's
-  # admin UI. This is the only block in this file combining forward_auth with a directive
-  # that has a default order ahead of it -- every other block is a bare reverse_proxy,
-  # which forward_auth already precedes by default (verified live for all of them).
-  route {
-    import authelia
-    redir / /admin/
-    reverse_proxy pihole:80
-  }
+  redir / /admin/
+  reverse_proxy pihole:80
 }
 
 ########################################################
@@ -82,7 +38,6 @@ pi.bjtn.xyz {
 # for the thinkpad
 syncthing.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy syncthing:8384 {
     # we need this because otherwise we'll get a "host check error"
     header_up Host {upstream_hostport}
@@ -92,7 +47,6 @@ syncthing.bjtn.xyz {
 # kindle's syncthing GUI
 kindle.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy 100.101.80.38:8384 {
     # we need this because otherwise we'll get a "host check error"
     header_up Host {upstream_hostport}
@@ -102,7 +56,6 @@ kindle.bjtn.xyz {
 # steamdeck's syncthing GUI
 steamdeck.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy 100.65.182.44:8384 {
     # we need this because otherwise we'll get a "host check error"
     header_up Host {upstream_hostport}
@@ -112,7 +65,6 @@ steamdeck.bjtn.xyz {
 # ayn thor syncthing GUI
 thor.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy https://100.83.201.58:8384 {
     transport http {
       tls_insecure_skip_verify
@@ -123,7 +75,6 @@ thor.bjtn.xyz {
 # music tablet's syncthing GUI
 music.bjtn.xyz {
   import porkbun_tls
-  import authelia
 	reverse_proxy 100.74.227.72:8384 {
     # we need this because otherwise we'll get a "host check error"
 		header_up Host {upstream_hostport}
@@ -136,98 +87,57 @@ music.bjtn.xyz {
 
 sonarr.bjtn.xyz {
   import porkbun_tls
-  # scripts/arr-cutoff-search.sh (Jenkins); API always requires X-Api-Key
-  @bypass path /api/*
-  handle @bypass {
-    reverse_proxy sonarr:8989
-  }
-  handle {
-    import authelia
-    reverse_proxy sonarr:8989
-  }
+  reverse_proxy sonarr:8989
 }
 
 radarr.bjtn.xyz {
   import porkbun_tls
-  # scripts/arr-cutoff-search.sh (Jenkins); API always requires X-Api-Key
-  @bypass path /api/*
-  handle @bypass {
-    reverse_proxy radarr:7878
-  }
-  handle {
-    import authelia
-    reverse_proxy radarr:7878
-  }
+  reverse_proxy radarr:7878
 }
 
 prowlarr.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy prowlarr:9696
 }
 
 bazarr.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy bazarr:6767
 }
 
 jellyfin.bjtn.xyz {
   import porkbun_tls
-  # Only the web UI's entry points are gated. Everything else is Jellyfin's API
-  # (token-authed), which native clients -- and already-open web tabs -- call
-  # without an Authelia cookie; gating it broke playback reporting/websocket.
-  @gated path / /web /web/ /web/index.html
-  handle @gated {
-    import authelia
-    reverse_proxy jellyfin:8096
-  }
-  handle {
-    reverse_proxy jellyfin:8096
-  }
+  reverse_proxy jellyfin:8096
 }
 
 seerr.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy seerr:5055
 }
 
 shelfmark.bjtn.xyz,
 books.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy shelfmark:8084
 }
 
 qbit.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy gluetun:8181
 }
 
 nzb.bjtn.xyz {
   import porkbun_tls
-  # scripts/sabnzbd-orphan-cleanup.py (Jenkins); SABnzbd's API requires apikey
-  @bypass path /api /api/*
-  handle @bypass {
-    reverse_proxy gluetun:8080
-  }
-  handle {
-    import authelia
-    reverse_proxy gluetun:8080
-  }
+  reverse_proxy gluetun:8080
 }
 
 cleanuparr.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy cleanuparr:11011
 }
 
 youtarr.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy youtarr:3011
 }
 
@@ -239,52 +149,32 @@ youtarr.bjtn.xyz {
 immich.bjtn.xyz,
 photos.bjtn.xyz {
   import porkbun_tls
-  # mobile app backup + scripts/obs-album-sync.py use the (token/API-key) API
-  @bypass path /api/* /.well-known/immich
-  handle @bypass {
-    reverse_proxy immich:2283
-  }
-  handle {
-    import authelia
-    reverse_proxy immich:2283
-  }
+  reverse_proxy immich:2283
 }
 
 beszel.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy beszel:8090
 }
 
 glances.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy glances:61208
 }
 
 pause.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy downloads-control:8765
 }
 
 search.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy arr-control:8767
 }
 
 jenkins.bjtn.xyz {
   import porkbun_tls
-  # host agent (jenkins-agent.service) websocket + jar download; per-agent secret
-  @bypass path /wsagents/* /jnlpJars/* /tcpSlaveAgentListener/*
-  handle @bypass {
-    reverse_proxy jenkins:8080
-  }
-  handle {
-    import authelia
-    reverse_proxy jenkins:8080
-  }
+  reverse_proxy jenkins:8080
 }
 
 # note-to-pdf.bjtn.xyz (supernote-control) and backup.bjtn.xyz
@@ -297,21 +187,18 @@ jenkins.bjtn.xyz {
 dozzle.bjtn.xyz,
 logs.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy dozzle:8080
 }
 
 home.bjtn.xyz,
 homarr.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy homarr:7575
 }
 
 upsnap.bjtn.xyz,
 wol.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy 192.168.1.194:8091
 }
 
@@ -322,19 +209,16 @@ wol.bjtn.xyz {
 romm.bjtn.xyz,
 roms.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy romm:8080
 }
 
 scrutiny.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy scrutiny-web:8080
 }
 
 arcane.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy arcane:3552
 }
 
@@ -348,26 +232,12 @@ cloud.bjtn.xyz,
 nc.bjtn.xyz,
 nextcloud.bjtn.xyz {
   import porkbun_tls
-  # desktop/mobile sync clients: WebDAV, OCS API, capability probe, CalDAV/CardDAV
-  # discovery, avatars/previews, and login-flow-v2 init+poll (the browser half of
-  # that flow, /login/v2/flow/*, stays gated -- it's interactive anyway). All of
-  # these require a Nextcloud session or app password.
-  @bypass path /remote.php/* /ocs/* /status.php /.well-known/* /index.php/login/v2 /index.php/login/v2/poll /login/v2 /login/v2/poll /index.php/avatar/* /avatar/* /index.php/core/preview* /core/preview*
-  handle @bypass {
-    reverse_proxy nextcloud:80 {
-      header_up X-Forwarded-Proto https
-    }
-  }
-  handle {
-    import authelia
-    reverse_proxy nextcloud:80 {
-      header_up X-Forwarded-Proto https
-    }
+  reverse_proxy nextcloud:80 {
+    header_up X-Forwarded-Proto https
   }
 }
 
 whisper.bjtn.xyz {
   import porkbun_tls
-  import authelia
   reverse_proxy 100.117.170.34:8178
 }

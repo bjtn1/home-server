@@ -95,10 +95,4 @@
 !/.gitleaks-baseline.json
 !/.githooks/
 !/.githooks/**
-# Authelia + access-control (forward-auth gate in front of every *.bjtn.xyz subdomain,
-# 2026-09-22). configuration.yml holds NO secrets (those are env vars from the untracked
-# authelia/.env). Deliberately NOT tracked: authelia/.env (secrets), users_database.yml
-# (password hash), access.yml/db.sqlite3/notification.txt (generated/runtime state),
-# access-control/state/access.json (runtime state) -- all covered by the default-deny rule.
-!authelia/config/configuration.yml
 .claude/settings.local.json

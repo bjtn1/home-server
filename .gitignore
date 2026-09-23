@@ -101,3 +101,4 @@
 # (password hash), access.yml/db.sqlite3/notification.txt (generated/runtime state),
 # access-control/state/access.json (runtime state) -- all covered by the default-deny rule.
 !authelia/config/configuration.yml
+.claude/settings.local.json

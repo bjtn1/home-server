@@ -24,6 +24,12 @@
 # explicitly granted -- imported into every site block below, including this file's own
 # admin/control-panel entries. auth.bjtn.xyz itself (the login portal) must NEVER import
 # this, or it becomes an infinite redirect loop.
+#
+# Non-browser clients (native apps, the Jenkins agent, host scripts) can't do an
+# interactive Authelia login, so a few blocks below carve out their API/protocol
+# paths with a `handle @bypass` ahead of the gated `handle`. Every carved-out path
+# was verified to still demand the app's OWN credentials (token/API key/agent
+# secret -> 401/403 without) -- the carve-outs drop the second gate, not the only one.
 (authelia) {
   forward_auth authelia:9091 {
     uri /api/verify?rd=https://auth.bjtn.xyz
@@ -130,14 +136,28 @@ music.bjtn.xyz {
 
 sonarr.bjtn.xyz {
   import porkbun_tls
-  import authelia
-  reverse_proxy sonarr:8989
+  # scripts/arr-cutoff-search.sh (Jenkins); API always requires X-Api-Key
+  @bypass path /api/*
+  handle @bypass {
+    reverse_proxy sonarr:8989
+  }
+  handle {
+    import authelia
+    reverse_proxy sonarr:8989
+  }
 }
 
 radarr.bjtn.xyz {
   import porkbun_tls
-  import authelia
-  reverse_proxy radarr:7878
+  # scripts/arr-cutoff-search.sh (Jenkins); API always requires X-Api-Key
+  @bypass path /api/*
+  handle @bypass {
+    reverse_proxy radarr:7878
+  }
+  handle {
+    import authelia
+    reverse_proxy radarr:7878
+  }
 }
 
 prowlarr.bjtn.xyz {
@@ -154,8 +174,17 @@ bazarr.bjtn.xyz {
 
 jellyfin.bjtn.xyz {
   import porkbun_tls
-  import authelia
-  reverse_proxy jellyfin:8096
+  # Only the web UI's entry points are gated. Everything else is Jellyfin's API
+  # (token-authed), which native clients -- and already-open web tabs -- call
+  # without an Authelia cookie; gating it broke playback reporting/websocket.
+  @gated path / /web /web/ /web/index.html
+  handle @gated {
+    import authelia
+    reverse_proxy jellyfin:8096
+  }
+  handle {
+    reverse_proxy jellyfin:8096
+  }
 }
 
 seerr.bjtn.xyz {
@@ -179,8 +208,15 @@ qbit.bjtn.xyz {
 
 nzb.bjtn.xyz {
   import porkbun_tls
-  import authelia
-  reverse_proxy gluetun:8080
+  # scripts/sabnzbd-orphan-cleanup.py (Jenkins); SABnzbd's API requires apikey
+  @bypass path /api /api/*
+  handle @bypass {
+    reverse_proxy gluetun:8080
+  }
+  handle {
+    import authelia
+    reverse_proxy gluetun:8080
+  }
 }
 
 cleanuparr.bjtn.xyz {
@@ -203,8 +239,15 @@ youtarr.bjtn.xyz {
 immich.bjtn.xyz,
 photos.bjtn.xyz {
   import porkbun_tls
-  import authelia
-  reverse_proxy immich:2283
+  # mobile app backup + scripts/obs-album-sync.py use the (token/API-key) API
+  @bypass path /api/* /.well-known/immich
+  handle @bypass {
+    reverse_proxy immich:2283
+  }
+  handle {
+    import authelia
+    reverse_proxy immich:2283
+  }
 }
 
 beszel.bjtn.xyz {
@@ -233,8 +276,15 @@ search.bjtn.xyz {
 
 jenkins.bjtn.xyz {
   import porkbun_tls
-  import authelia
-  reverse_proxy jenkins:8080
+  # host agent (jenkins-agent.service) websocket + jar download; per-agent secret
+  @bypass path /wsagents/* /jnlpJars/* /tcpSlaveAgentListener/*
+  handle @bypass {
+    reverse_proxy jenkins:8080
+  }
+  handle {
+    import authelia
+    reverse_proxy jenkins:8080
+  }
 }
 
 # note-to-pdf.bjtn.xyz (supernote-control) and backup.bjtn.xyz
@@ -298,9 +348,21 @@ cloud.bjtn.xyz,
 nc.bjtn.xyz,
 nextcloud.bjtn.xyz {
   import porkbun_tls
-  import authelia
-  reverse_proxy nextcloud:80 {
-    header_up X-Forwarded-Proto https
+  # desktop/mobile sync clients: WebDAV, OCS API, capability probe, CalDAV/CardDAV
+  # discovery, avatars/previews, and login-flow-v2 init+poll (the browser half of
+  # that flow, /login/v2/flow/*, stays gated -- it's interactive anyway). All of
+  # these require a Nextcloud session or app password.
+  @bypass path /remote.php/* /ocs/* /status.php /.well-known/* /index.php/login/v2 /index.php/login/v2/poll /login/v2 /login/v2/poll /index.php/avatar/* /avatar/* /index.php/core/preview* /core/preview*
+  handle @bypass {
+    reverse_proxy nextcloud:80 {
+      header_up X-Forwarded-Proto https
+    }
+  }
+  handle {
+    import authelia
+    reverse_proxy nextcloud:80 {
+      header_up X-Forwarded-Proto https
+    }
   }
 }
 

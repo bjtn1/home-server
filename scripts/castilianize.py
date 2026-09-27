@@ -13,7 +13,7 @@ For every video file under the given root path(s):
     (cinematic letterbox, e.g. Loki) are NOT touched.
   - If it isn't already a Matroska (.mkv) container, remux/convert it to one.
   - Tag the CASTILIAN audio track as Spanish (legacy `spa` + IETF `es-ES`).
-    ONLY that one track: which one is decided by whisper_media.pick_spanish_audio()
+    ONLY that one track: which one is decided by pick_spanish_audio()
     (track NAME beats the es-ES tag beats other Spanish tags; English/Japanese/
     Latino/commentary names are excluded). Other audio tracks are never touched.
     If no track qualifies (e.g. an English-only file) or several rank equally, NOTHING
@@ -57,8 +57,64 @@ import time
 from pathlib import Path
 from typing import Optional
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import whisper_media as M  # noqa: E402  (shared, tested Castilian-track picker)
+# Castilian-track picker. Language TAGS are unreliable (an Inazuma Eleven file has "Castellano" and
+# "Japonés" both tagged spa/es-ES), so pick_spanish_audio() reads the track NAME first.
+SPANISH_CODES = {"es", "spa", "esp", "spanish", "español", "espanol", "castellano",
+                 "es-es", "es-419", "es-mx", "sp"}
+# words in a track name that mean "this is NOT the Castilian dub"
+NOT_CASTILIAN_NAME = re.compile(
+    r"jap|jpn|nippon|orig|\bv\.?o\.?\b|ingl|engl|\beng\b|\[eng\]|franc|french|alem|german|ital|catal|"
+    r"portug|coreano|korean|chin|latino|latam|latinoam|mexic|argent|\bmx\b|comentari|commentar",
+    re.I)
+CASTILIAN_NAME = re.compile(r"castell|castilian|espa[nñ]a|peninsular|\bes-es\b|spain", re.I)
+TRUE_CASTILIAN_TAG = ("es-es",)
+LATAM_TAG_PREFIX = ("es-419", "es-mx", "es-ar", "es-co", "es-cl")
+
+
+def mkv_info(path):
+    r = subprocess.run(["mkvmerge", "-J", path], capture_output=True, text=True)
+    if r.returncode not in (0, 1):
+        raise RuntimeError(f"mkvmerge failed on {path}: {r.stderr.strip()[:200]}")
+    return json.loads(r.stdout)
+
+
+def _is_spanish_tag(props):
+    lang = (props.get("language") or "").lower()
+    ietf = (props.get("language_ietf") or "").lower()
+    return lang in SPANISH_CODES or ietf.split("-")[0] in ("es", "spa")
+
+
+def pick_spanish_audio(tracks):
+    """-> (audio_relative_index, track_name, note) or (None, None, reason).
+    audio_relative_index is the N for ffmpeg's `-map 0:a:N`."""
+    audio = [t for t in tracks if t["type"] == "audio"]
+    cands = []  # (audio_relative_index, name, tier) -- lower tier = stronger evidence
+    for n, t in enumerate(audio):
+        p = t["properties"]
+        name = p.get("track_name") or ""
+        ietf = (p.get("language_ietf") or "").lower()
+        lang = (p.get("language") or "").lower()
+        if NOT_CASTILIAN_NAME.search(name):
+            continue
+        if ietf.startswith(LATAM_TAG_PREFIX):
+            continue
+        # Tier 1: the track NAME says Castilian. Tier 2: only the es-ES tag says so
+        # (tags are unreliable: English/Japanese tracks are often tagged spa es-ES).
+        # Tier 3: other Spanish-tagged or untagged-unnamed tracks.
+        if CASTILIAN_NAME.search(name):
+            cands.append((n, name, 1))
+        elif ietf in TRUE_CASTILIAN_TAG:
+            cands.append((n, name, 2))
+        elif _is_spanish_tag(p) or (lang in ("und", "") and not name):
+            cands.append((n, name, 3))
+    if not cands:
+        return None, None, "no Spanish/Castilian audio track (after excluding by name)"
+    best = min(c[2] for c in cands)
+    pool = [c for c in cands if c[2] == best]
+    if len(pool) > 1:
+        return pool[0][0], pool[0][1], f"AMBIGUOUS: {len(pool)} equally-ranked candidate tracks, took first"
+    return pool[0][0], pool[0][1], "ok"
+
 
 VIDEO_EXTENSIONS = {
     ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".m4v",
@@ -121,7 +177,7 @@ def probe(tools: Tools, path: Path) -> Optional[dict]:
     if path.suffix.lower() == ".mkv":
         # mkvmerge exposes the real track name and IETF tag (ffprobe does not)
         try:
-            tracks = [t for t in M.mkv_info(str(path))["tracks"] if t["type"] == "audio"]
+            tracks = [t for t in mkv_info(str(path))["tracks"] if t["type"] == "audio"]
         except Exception as e:  # noqa: BLE001
             log.error("mkvmerge -J failed on %s: %s", path, e)
             return None
@@ -270,7 +326,7 @@ def audio_tag_plan(audio_tracks: list) -> dict:
     needs the spa/es-ES tag. -> {'target': ordinal|None, 'needs': bool, 'note': str}"""
     fake = [{"type": "audio", "properties": {"track_name": t["name"], "language": t["language"],
                                              "language_ietf": t["ietf"] or ""}} for t in audio_tracks]
-    idx, _name, note = M.pick_spanish_audio(fake)
+    idx, _name, note = pick_spanish_audio(fake)
     if idx is None:
         return {"target": None, "needs": False, "note": note}
     if note.startswith("AMBIGUOUS"):

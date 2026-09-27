@@ -236,8 +236,3 @@ nextcloud.bjtn.xyz {
     header_up X-Forwarded-Proto https
   }
 }
-
-whisper.bjtn.xyz {
-  import porkbun_tls
-  reverse_proxy 100.117.170.34:8178
-}

@@ -27,6 +27,9 @@ exec 9>"$LOCKFILE"
 flock -n 9 || { echo "already running, exiting"; exit 1; }
 
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
+# tool output goes to the log file AND the console (Jenkins), indented under the step it belongs to.
+# pipefail (set above) keeps the tool's own exit status for the `if`.
+show() { tee -a "$LOG" | sed -u 's/^/      /'; }
 
 # preflight: fail loudly and immediately if a required tool is missing,
 # rather than let it manifest later as a confusing per-repo SKIP/failure
@@ -57,7 +60,9 @@ for repo_dir in "$B0_ROOT"/*/; do
 
   export RESTIC_REPOSITORY="$repo_dir"
 
-  restic unlock >>"$LOG" 2>&1
+  t_repo=$SECONDS
+  log "---- $repo ($(du -sh "$repo_dir" 2>/dev/null | cut -f1) on disk)"
+  restic unlock 2>&1 | show
 
   if ! snap_json=$(restic snapshots --latest 1 --json 2>>"$LOG"); then
     log "FAILED $repo: could not query snapshots (see above -- likely wrong password, corrupt repo, or unmounted drive)"
@@ -75,8 +80,15 @@ for repo_dir in "$B0_ROOT"/*/; do
   fi
 
   log "backing up $repo <- ${paths[*]}"
-  if restic backup "${paths[@]}" >>"$LOG" 2>&1; then
-    if ! restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune >>"$LOG" 2>&1; then
+  if restic backup --verbose "${paths[@]}" 2>&1 | show; then
+    # exactly what changed since the previous snapshot (+ added, - removed, M modified)
+    mapfile -t last2 < <(restic snapshots --json 2>/dev/null | jq -r 'sort_by(.time) | .[-2:][] | .short_id')
+    if [ "${#last2[@]}" -eq 2 ]; then
+      log "changes in $repo since the previous snapshot (${last2[0]} -> ${last2[1]}):"
+      restic diff "${last2[0]}" "${last2[1]}" 2>&1 | show
+    fi
+    log "pruning $repo (keep 7 daily / 4 weekly / 6 monthly)"
+    if ! restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune 2>&1 | show; then
       log "FAILED: $repo forget/prune (retention policy not enforced this run -- see log)"
       FAILED=1
     fi
@@ -87,7 +99,7 @@ for repo_dir in "$B0_ROOT"/*/; do
   fi
 
   log "checking $repo (structural)"
-  if ! restic check >>"$LOG" 2>&1; then
+  if ! restic check 2>&1 | show; then
     log "CHECK FAILED: $repo -- will NOT replicate this run"
     CHECK_FAILED=1
   else
@@ -97,12 +109,12 @@ for repo_dir in "$B0_ROOT"/*/; do
     # paying the cost of reading everything every single night
     day_of_week=$(date +%u)
     log "deep-checking $repo (data subset ${day_of_week}/7)"
-    if ! restic check --read-data-subset="${day_of_week}/7" >>"$LOG" 2>&1; then
+    if ! restic check --read-data-subset="${day_of_week}/7" 2>&1 | show; then
       log "DEEP CHECK FAILED: $repo -- will NOT replicate this run"
       CHECK_FAILED=1
     fi
   fi
-  log "done: $repo"
+  log "done: $repo ($((SECONDS - t_repo))s)"
 done
 
 if [ "$CHECK_FAILED" -eq 1 ]; then
@@ -110,9 +122,9 @@ if [ "$CHECK_FAILED" -eq 1 ]; then
   exit 1
 fi
 
-log "replicating to $REPLICA_A"
-rsync -a --delete-after "$B0_ROOT"/ "$REPLICA_A"/ >>"$LOG" 2>&1
-rc=$?
+log "replicating $B0_ROOT -> $REPLICA_A (every file added/updated/deleted listed below)"
+rsync -a --delete-after --itemize-changes --stats -h "$B0_ROOT"/ "$REPLICA_A"/ 2>&1 | show
+rc=${PIPESTATUS[0]}
 if [ $rc -ne 0 ]; then
   log "FAILED: replication to $REPLICA_A (rsync exit code $rc, see log)"
   FAILED=1

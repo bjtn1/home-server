@@ -66,6 +66,8 @@
 # job. No secrets -- talks to the nextcloud container via `docker exec`,
 # no API key needed (2026-09-10).
 !nextcloud-files-scan.sh
+# Wrapper every Jenkins job runs its script through: context header + exit code/duration footer.
+!jenkins-run.sh
 !/.gitleaks.toml
 !/.gitleaks-baseline.json
 !/.githooks/

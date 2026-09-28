@@ -36,9 +36,9 @@ LOCKFILE="/tmp/arr-cutoff-search.lock"
 exec 9>"$LOCKFILE"
 flock -n 9 || { echo "arr-cutoff-search: already running (lock held), exiting"; exit 0; }
 
-RADARR_URL="https://radarr.bjtn.xyz"
+RADARR_URL="${RADARR_URL:-https://radarr.bjtn.xyz}"   # overridable for testing against a mock
 RADARR_KEY="${RADARR_KEY:?RADARR_KEY not set -- set via the systemd unit Environment=}"
-SONARR_URL="https://sonarr.bjtn.xyz"
+SONARR_URL="${SONARR_URL:-https://sonarr.bjtn.xyz}"
 SONARR_KEY="${SONARR_KEY:?SONARR_KEY not set -- set via the systemd unit Environment=}"
 
 FAILED=0
@@ -63,6 +63,35 @@ sys.exit(1)
 " 2>/dev/null
 }
 
+# Print what the app looks like before anything is triggered: version, how much is
+# missing / below cutoff, and every command already queued or running.
+describe() {
+    local name="$1" url="$2" key="$3" kind="$4"
+    local status missing cutoff queue
+    status=$(curl -s -m 30 -w '\n%{http_code}' -H "X-Api-Key: $key" "$url/api/v3/system/status")
+    if [ "$(echo "$status" | tail -1)" != "200" ]; then
+        log "$name: UNREACHABLE or key rejected -- HTTP $(echo "$status" | tail -1): $(echo "$status" | sed '$d' | head -c 200)"
+        return
+    fi
+    log "$name: $(echo "$status" | sed '$d' | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d.get('appName','?')} v{d.get('version','?')}, started {d.get('startTime','?')}\")" 2>/dev/null)"
+    missing=$(curl -s -m 60 -H "X-Api-Key: $key" "$url/api/v3/wanted/missing?pageSize=1&monitored=true" | python3 -c "import json,sys; print(json.load(sys.stdin).get('totalRecords','?'))" 2>/dev/null || echo "?")
+    cutoff=$(curl -s -m 60 -H "X-Api-Key: $key" "$url/api/v3/wanted/cutoff?pageSize=1&monitored=true" | python3 -c "import json,sys; print(json.load(sys.stdin).get('totalRecords','?'))" 2>/dev/null || echo "?")
+    log "$name: $missing monitored $kind missing, $cutoff below quality/language cutoff"
+    queue=$(curl -s -m 30 -H "X-Api-Key: $key" "$url/api/v3/command" | python3 -c "
+import json, sys
+try:
+    cmds = [c for c in json.load(sys.stdin) if c.get('status') in ('started', 'queued')]
+except Exception:
+    print('  (could not read command queue)'); sys.exit()
+if not cmds:
+    print('  (nothing queued or running)')
+for c in cmds:
+    print(f\"  {c.get('status'):8} {c.get('name')} (id {c.get('id')}, queued {c.get('queued','?')}, started {c.get('started','-')})\")
+" 2>/dev/null)
+    log "$name: commands queued/running right now:"
+    echo "$queue"
+}
+
 trigger() {
     local name="$1" url="$2" key="$3" command="$4"
     local raw http_code body status
@@ -83,7 +112,7 @@ trigger() {
         return
     fi
 
-    status=$(echo "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','?'))" 2>/dev/null) || status="parse-error"
+    status=$(echo "$body" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d.get('status','?')} (command id {d.get('id','?')}, queued {d.get('queued','?')})\")" 2>/dev/null) || status="parse-error"
     if [ "$status" = "parse-error" ]; then
         log "$name ($command): FAILED - HTTP 201 but couldn't parse response body: $(echo "$body" | head -c 200)"
         FAILED=1
@@ -92,12 +121,18 @@ trigger() {
     fi
 }
 
+log "Radarr: $RADARR_URL   Sonarr: $SONARR_URL"
+describe "Radarr" "$RADARR_URL" "$RADARR_KEY" "movies"
+describe "Sonarr" "$SONARR_URL" "$SONARR_KEY" "episodes"
+log "triggering searches (each is skipped if the same search is already queued/running):"
 trigger "Radarr" "$RADARR_URL" "$RADARR_KEY" "MissingMoviesSearch"
 trigger "Radarr" "$RADARR_URL" "$RADARR_KEY" "CutoffUnmetMoviesSearch"
 trigger "Sonarr" "$SONARR_URL" "$SONARR_KEY" "MissingEpisodeSearch"
 trigger "Sonarr" "$SONARR_URL" "$SONARR_KEY" "CutoffUnmetEpisodeSearch"
 
 if [ "$FAILED" -eq 1 ]; then
+    log "at least one trigger FAILED (see above)"
     exit 1
 fi
+log "searches are now queued inside Radarr/Sonarr; they run there (can take hours) -- watch System > Tasks in each app"
 exit 0

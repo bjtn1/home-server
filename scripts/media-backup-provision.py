@@ -74,10 +74,17 @@ def slugify(name):
     return slug
 
 
-def restic(args, env):
-    return subprocess.run(
-        ["restic"] + args, env=env, capture_output=True, text=True,
-    )
+def restic(args, env, show=False):
+    """Run restic; with show=True print its full output (indented) and how long it took."""
+    import time
+    t0 = time.time()
+    r = subprocess.run(["restic"] + args, env=env, capture_output=True, text=True)
+    if show:
+        log(f"  $ restic {' '.join(args)}   (exit {r.returncode}, {time.time() - t0:.1f}s)")
+        for line in (r.stdout + r.stderr).splitlines():
+            if line.strip():
+                log(f"      {line}")
+    return r
 
 
 def main():
@@ -90,6 +97,8 @@ def main():
     env = os.environ.copy()
     env["RESTIC_PASSWORD_FILE"] = PW_FILE_PATH
 
+    log(f"mode: {'DRY RUN' if args.dry_run else 'APPLY'} | tv: {TV_ROOT} | movies: {MOVIES_ROOT} | repos: {B0_ROOT}"
+        f"{' | retire pass skipped' if args.skip_retire else ''}")
     folders = []
     for root in (TV_ROOT, MOVIES_ROOT):
         if not os.path.isdir(root):
@@ -100,6 +109,7 @@ def main():
             if os.path.isdir(full):
                 folders.append((entry, full))
 
+    log(f"{len(folders)} show/movie folders found")
     slug_map = {}
     for name, full in folders:
         slug = slugify(name)
@@ -128,7 +138,9 @@ def main():
             # --latest 1 returns one snapshot per (host, paths) group, oldest group first
             latest_paths = max(snaps, key=lambda x: x["time"]).get("paths", []) if snaps else []
             if latest_paths == [full]:
-                log(f"SKIP {slug}-backup: already provisioned ({full})")
+                newest = max(snaps, key=lambda x: x["time"])
+                log(f"SKIP {slug}-backup: already provisioned ({full}); latest snapshot {newest.get('short_id', '?')} "
+                    f"from {newest.get('time', '?')[:19]}")
                 skipped += 1
                 continue
             # ssd-backup.sh reuses the latest snapshot's paths verbatim, so a
@@ -145,14 +157,14 @@ def main():
         if needs_init:
             os.makedirs(repo_dir, exist_ok=True)
             restic(["unlock"], env)
-            r = restic(["init"], env)
+            r = restic(["init"], env, show=True)
             if r.returncode != 0:
                 log(f"FAILED init {slug}-backup: {r.stderr.strip()}")
                 continue
         else:
             restic(["unlock"], env)
 
-        r = restic(["backup", full], env)
+        r = restic(["backup", "--verbose", full], env, show=True)
         if r.returncode != 0:
             log(f"FAILED seed backup {slug}-backup: {r.stderr.strip()}")
             continue
@@ -169,6 +181,7 @@ def main():
         retired_dir = os.path.join(B0_ROOT, "retired")
         tv_prefix = TV_ROOT.rstrip("/") + "/"
         movies_prefix = MOVIES_ROOT.rstrip("/") + "/"
+        log("\nretire check: repos whose /tv or /movies folder no longer exists")
         if os.path.isdir(B0_ROOT):
             for entry in sorted(os.listdir(B0_ROOT)):
                 if entry == "retired" or not entry.endswith("-backup"):
@@ -188,16 +201,20 @@ def main():
                     log(f"WARN: could not parse snapshot JSON for {entry}, leaving alone")
                     continue
                 if not snaps:
+                    log(f"  retire check {entry}: no snapshots, leaving alone")
                     continue
                 newest = max(snaps, key=lambda x: x["time"])
                 if not newest.get("paths"):
+                    log(f"  retire check {entry}: latest snapshot has no paths, leaving alone")
                     continue
                 path = newest["paths"][0]
                 if not (path.startswith(tv_prefix) or path.startswith(movies_prefix)):
+                    log(f"  retire check {entry}: backs up {path} (not /tv or /movies) -- not this script's repo")
                     continue  # out of scope for this script entirely -- a different backup system's repo
 
                 slug = entry[: -len("-backup")]
                 if slug in slug_map:
+                    log(f"  retire check {entry}: folder still exists, keep")
                     continue
                 log(f"RETIRE {entry}: tracked path {path} no longer exists under /tv or /movies")
                 if not args.dry_run:

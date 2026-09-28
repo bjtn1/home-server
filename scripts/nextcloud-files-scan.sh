@@ -8,4 +8,7 @@
 # new ones, looking like duplicates, until this scan ran).
 set -euo pipefail
 
-docker exec -u www-data nextcloud php occ files:scan bjtn
+# -v lists every folder/file Nextcloud has to (re)read, then the usual summary table
+echo "Nextcloud: $(docker exec -u www-data nextcloud php occ status --output=plain 2>/dev/null | grep -E 'versionstring|maintenance' | tr '\n' ' ')"
+echo "scanning bjtn's files (data dir: /mnt/vault/nextcloud/bjtn/files) ..."
+docker exec -u www-data nextcloud php occ files:scan -v bjtn

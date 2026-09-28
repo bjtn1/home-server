@@ -47,7 +47,8 @@ def api(method, path, body=None):
 
 
 def get_library_asset_ids():
-    ids = set()
+    """-> {asset id: original filename}"""
+    ids = {}
     page = 1
     while True:
         resp = api("POST", "/search/metadata", {
@@ -58,15 +59,17 @@ def get_library_asset_ids():
         items = resp.get("assets", {}).get("items", [])
         if not items:
             break
-        ids.update(i["id"] for i in items)
+        ids.update((i["id"], i.get("originalFileName") or i.get("originalPath") or "?") for i in items)
         if not resp.get("assets", {}).get("nextPage"):
             break
         page += 1
+    log(f"library: read {len(ids)} asset(s) in {page} page(s)")
     return ids
 
 
 def get_album_asset_ids():
-    ids = set()
+    """-> {asset id: original filename}"""
+    ids = {}
     page = 1
     while True:
         resp = api("POST", "/search/metadata", {
@@ -77,19 +80,27 @@ def get_album_asset_ids():
         items = resp.get("assets", {}).get("items", [])
         if not items:
             break
-        ids.update(i["id"] for i in items)
+        ids.update((i["id"], i.get("originalFileName") or i.get("originalPath") or "?") for i in items)
         if not resp.get("assets", {}).get("nextPage"):
             break
         page += 1
+    log(f"album: read {len(ids)} asset(s) in {page} page(s)")
     return ids
 
 
 def main():
     log("=== run start ===")
+    log(f"Immich {IMMICH_URL} | External Library {LIBRARY_ID} -> album {ALBUM_ID}")
     library_ids = get_library_asset_ids()
     album_ids = get_album_asset_ids()
-    missing = list(library_ids - album_ids)
+    missing = sorted(set(library_ids) - set(album_ids), key=lambda i: library_ids[i])
+    extra = set(album_ids) - set(library_ids)
+    if extra:
+        log(f"note: {len(extra)} album asset(s) are not in the library (left alone): "
+            + ", ".join(sorted(album_ids[i] for i in extra)[:20]))
     log(f"library has {len(library_ids)} asset(s), album has {len(album_ids)}, {len(missing)} to add")
+    for i in missing:
+        log(f"  to add: {library_ids[i]} ({i})")
 
     if not missing:
         log("=== run end: nothing to add ===")
@@ -102,10 +113,13 @@ def main():
         batch = missing[i:i + 500]
         results = api("PUT", f"/albums/{ALBUM_ID}/assets", {"ids": batch})
         for r in results:
+            name = library_ids.get(r.get("id"), "?")
             if r.get("success"):
                 added += 1
+                log(f"  added: {name}")
             else:
                 failed += 1
+                log(f"  FAILED: {name} ({r.get('id')}): {r.get('error', 'no reason given')}")
 
     log(f"=== run end: added {added}, failed {failed} ===")
     if failed:

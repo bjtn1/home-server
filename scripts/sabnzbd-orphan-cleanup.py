@@ -47,6 +47,13 @@ def fetch_json(url):
         return json.load(resp)
 
 
+def human(n):
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1000 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1000
+
+
 def dir_size(path):
     total = 0
     for dirpath, _, filenames in os.walk(path):
@@ -79,6 +86,13 @@ def main():
         if s.get("status") == "Failed"
     }
 
+    q = queue["queue"]
+    log(f"SABnzbd {SABNZBD_URL}: queue has {len(active_names)} job(s) (status {q.get('status', '?')}, "
+        f"{q.get('sizeleft', '?')} left), history has {len(history['history'].get('slots', []))} job(s), "
+        f"{len(failed_names)} of them Failed")
+    for n in sorted(active_names):
+        log(f"  in queue: {n}")
+
     if not os.path.isdir(INCOMPLETE_DIR):
         log(f"ERROR: {INCOMPLETE_DIR} does not exist, aborting")
         sys.exit(1)
@@ -86,27 +100,35 @@ def main():
     deleted_count = 0
     deleted_bytes = 0
 
-    for name in sorted(os.listdir(INCOMPLETE_DIR)):
+    entries = sorted(os.listdir(INCOMPLETE_DIR))
+    log(f"{INCOMPLETE_DIR} has {len(entries)} entr{'y' if len(entries) == 1 else 'ies'}:")
+    kept_bytes = 0
+    for name in entries:
         folder = os.path.join(INCOMPLETE_DIR, name)
         if not os.path.isdir(folder):
+            log(f"  KEEP (not a folder): {name}")
             continue
+        size = dir_size(folder)
         if name in active_names:
+            log(f"  KEEP (still in SABnzbd's queue): {name} ({human(size)})")
+            kept_bytes += size
             continue
         if name not in failed_names:
+            log(f"  KEEP (not marked Failed in history -- never guessed at): {name} ({human(size)})")
+            kept_bytes += size
             continue
 
-        size = dir_size(folder)
         try:
             shutil.rmtree(folder)
             deleted_count += 1
             deleted_bytes += size
-            log(f"DELETED (confirmed Failed, not active): {name} ({size} bytes)")
+            log(f"  DELETED (confirmed Failed, not active): {name} ({human(size)})")
         except OSError as e:
-            log(f"SKIP (delete failed: {e}): {name}")
+            log(f"  SKIP (delete failed: {e}): {name}")
 
     log(
         f"=== run end: deleted {deleted_count} folders, "
-        f"{deleted_bytes / 1e9:.2f} GB ==="
+        f"{human(deleted_bytes)}; kept {human(kept_bytes)} ==="
     )
 
 

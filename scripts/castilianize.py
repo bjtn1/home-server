@@ -293,16 +293,22 @@ def bars_crop(tools: Tools, path: Path, width, height):
     key = f"{path}|{st.st_size}|{int(st.st_mtime)}"
     cache = _load_bar_cache()
     if key not in cache:
+        t0 = time.time()
         box = measure_content_box(tools, path)
         if box is None:
+            log.debug("  bars: could not measure (fewer than 3 usable samples) -- left alone, not cached")
             return None                                          # transient failure: do not cache, do not touch
         cw, ch, x = box
+        log.debug("  bars: measured widest picture %dx%d at x=%d inside %sx%s (%.1fs) -> %s", cw, ch, x, width, height,
+                  time.time() - t0, "PILLARBOX (side bars)" if is_pillarbox(width, height, cw, ch, x) else "no side bars")
         if is_pillarbox(width, height, cw, ch, x):
             # shrink 2 px on each side (cropdetect can include a dark fringe) and keep everything even
             cache[key] = [(cw - 4) // 2 * 2, ch // 2 * 2, (x + 2) // 2 * 2, 0]
         else:
             cache[key] = []
         _save_bar_cache()
+    else:
+        log.debug("  bars: cached result -> %s", f"crop {cache[key]}" if cache[key] else "no side bars")
     v = cache[key]
     return tuple(v) if v else None
 
@@ -362,6 +368,15 @@ def verify_output(tools: Tools, path: Path, min_size=1000) -> bool:
         return False
 
 
+def _report(tool: str, result) -> bool:
+    """Log why an external tool failed (last lines of its stderr); returns True if it succeeded."""
+    ok = result.returncode == 0 or (tool == "mkvmerge" and result.returncode == 1)
+    if not ok:
+        err = result.stderr.decode(errors="replace") if isinstance(result.stderr, bytes) else (result.stderr or "")
+        log.warning("  %s failed (exit %d): %s", tool, result.returncode, " | ".join(err.strip().splitlines()[-5:]) or "no stderr")
+    return ok
+
+
 def stretch_filter() -> str:
     # Preserve pixel height, widen to hit exactly 16:9, force square pixels.
     return "scale=trunc(ih*16/9/2)*2:ih,setsar=1"
@@ -376,7 +391,7 @@ def run_ffmpeg_stretch(tools: Tools, src: Path, dst: Path) -> bool:
          "-vf", stretch_filter(), "-c:a", "copy", "-c:s", "copy", "-c:t", "copy", str(dst)],
         capture_output=True, timeout=6 * 3600,
     )
-    return result.returncode == 0 and verify_output(tools, dst)
+    return _report("ffmpeg", result) and verify_output(tools, dst)
 
 
 def run_ffmpeg_crop_stretch(tools: Tools, src: Path, dst: Path, crop) -> bool:
@@ -390,13 +405,13 @@ def run_ffmpeg_crop_stretch(tools: Tools, src: Path, dst: Path, crop) -> bool:
          "-vf", vf, "-c:a", "copy", "-c:s", "copy", "-c:t", "copy", str(dst)],
         capture_output=True, timeout=6 * 3600,
     )
-    return result.returncode == 0 and verify_output(tools, dst) and bars_gone(tools, dst)
+    return _report("ffmpeg", result) and verify_output(tools, dst) and bars_gone(tools, dst)
 
 
 def run_mkvmerge_remux(tools: Tools, src: Path, dst: Path) -> bool:
     result = subprocess.run([tools.mkvmerge, "-o", str(dst), str(src)],
                             capture_output=True, timeout=3600)
-    return result.returncode in (0, 1) and verify_output(tools, dst)
+    return _report("mkvmerge", result) and verify_output(tools, dst)
 
 
 def run_ffmpeg_remux(tools: Tools, src: Path, dst: Path) -> bool:
@@ -405,7 +420,7 @@ def run_ffmpeg_remux(tools: Tools, src: Path, dst: Path) -> bool:
          "-map", "0:v", "-map", "0:a?", "-map", "0:s?", "-map", "0:t?", "-c", "copy", str(dst)],
         capture_output=True, timeout=3600,
     )
-    return result.returncode == 0 and verify_output(tools, dst)
+    return _report("ffmpeg", result) and verify_output(tools, dst)
 
 
 def process_file(tools: Tools, path: Path, dry_run: bool, min_age_minutes: float = 30) -> str:
@@ -421,6 +436,12 @@ def process_file(tools: Tools, path: Path, dry_run: bool, min_age_minutes: float
 
     aspect = classify_aspect(info["width"], info["height"], info["dar"])
     multi_video = info["video_streams"] > 1
+    log.debug("%s", path)
+    log.debug("  video: %sx%s, display aspect %s -> %s%s; container %s", info["width"], info["height"], info["dar"] or "n/a",
+              {"stretch": "4:3, needs stretch", "leave": "~16:9, keep", "unusual": "unusual shape, keep"}[aspect],
+              f"; {info['video_streams']} video streams" if multi_video else "", path.suffix.lower())
+    for t in info["audio_tracks"]:
+        log.debug("  audio a%d: %s/%s %r", t["ordinal"], t["language"], t["ietf"] or "-", t["name"])
     is_mkv = path.suffix.lower() == ".mkv"
     stretch_needed = aspect == "stretch" and not multi_video
     crop = None
@@ -430,6 +451,8 @@ def process_file(tools: Tools, path: Path, dry_run: bool, min_age_minutes: float
     plan = audio_tag_plan(info["audio_tracks"]) if info["audio_tracks"] else \
         {"target": None, "needs": False, "note": "no audio"}
     tag_needed = plan["needs"]
+    log.debug("  audio decision: %s", plan["note"] if plan["target"] is None else
+              f"Castilian = a{plan['target']} ({'needs spa/es-ES tag' if tag_needed else 'already tagged spa/es-ES'})")
     target = path.with_suffix(".mkv")
     ambiguous = plan["note"].startswith("AMBIGUOUS")
 
@@ -526,11 +549,21 @@ def main():
 
     tools = Tools()
     counts = {}
-    for path in find_video_files(args.roots):
+    files = list(find_video_files(args.roots))
+    log.debug("mode: %s | roots: %s | skip files modified in the last %s min | bar cache: %s (%d entries)",
+              "DRY RUN" if args.dry_run else "APPLY", ", ".join(args.roots), args.min_age_minutes,
+              BAR_CACHE, len(_load_bar_cache()))
+    log.debug("tools: %s", ", ".join(f"{k}={v}" for k, v in vars(tools).items()))
+    log.debug("%d video files to check", len(files))
+    run_start = time.time()
+    for n, path in enumerate(files, 1):
+        t0 = time.time()
         status = process_file(tools, path, args.dry_run, args.min_age_minutes)
         counts[status] = counts.get(status, 0) + 1
         if status != "ALREADY_DONE":
             log.info("%s: %s", status, path)
+        log.debug("  -> %s in %.1fs  [%d/%d, %.0f min elapsed]", status, time.time() - t0, n, len(files),
+                  (time.time() - run_start) / 60)
 
     log.info("Summary: %s", counts)
     bad = {k: v for k, v in counts.items() if k in ("PROBE_FAILED", "STRETCH_FAILED", "BARS_FIX_FAILED", "REMUX_FAILED", "ERROR")}

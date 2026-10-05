@@ -13,15 +13,15 @@
 # time a drive drops out or reconnects late (confirmed the hard way,
 # see [[media-drive-incident]] incident #3: one drive going missing
 # shifted the rest from sda-sdf down to sda-sde, and the old hardcoded
-# /dev/sdf entry here broke the whole container even though 5 of the
-# 6 drives were perfectly healthy). Each entry maps its stable by-id
+# /dev/sdf entry here broke the whole container even though the
+# other drives were perfectly healthy). Each entry maps its stable by-id
 # host path to a fixed container-internal /dev/sdX name so the
 # collector's own smartctl scan still finds a normal-looking device
 # list inside the container regardless of what the host currently
 # calls it. If a drive is genuinely disconnected, its by-id symlink
 # won't exist either and this container will still fail to start --
 # that's correct/wanted (better to notice a monitored drive is gone
-# than silently scan 5 of 6), just update the affected line rather
+# than silently scan a subset), just update the affected line rather
 # than the whole list if a drive is replaced.
 #
 # Deliberately NOT including /dev/mmcblk0 (the Pi's boot SD card): no
@@ -81,32 +81,17 @@ services:
       - source: /dev/disk/by-id/ata-SAMSUNG_MZNLN256HCHP-000L7_S20GNAAGB13265
         target: /dev/sda
         permissions: rwm
-      - source: /dev/disk/by-id/ata-ST28000NT000-4AB103_K1S1NP4L
-        target: /dev/sdg
-        permissions: rwm
+      # vault (12TB, in the shared USB enclosure -- its host letter moves)
       - source: /dev/disk/by-id/ata-ST12000VN0008-3MH101_ZZ30PC97
-        target: /dev/sdh
+        target: /dev/sdb
         permissions: rwm
-      # The other 6 drives from the Pi (5x Samsung PSSD, 1x Micron) --
-      # migrated over 2026-08-31, confirmed empty (already consolidated
-      # onto vault), kept mounted as spare capacity.
+      # The two 4TB spares kept from the Pi (/mnt/b1_4tb, /mnt/b2_4tb).
+      # The 28TB (retired 2026-09-19) and the four T7s are gone.
       - source: /dev/disk/by-id/usb-Micron_CT4000X9SSD9_2535EA97271A-0:0
-        target: /dev/sdi
-        permissions: rwm
-      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_S6XBNS0W524023N-0:0
-        target: /dev/sdj
-        permissions: rwm
-      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6NRNJ0WB14459D-0:0
-        target: /dev/sdk
-        permissions: rwm
-      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6SLNS0X707913K-0:0
-        target: /dev/sdl
-        permissions: rwm
-      - source: /dev/disk/by-id/usb-Samsung_PSSD_T7_Shield_S6SMNJ0W600392A-0:0
-        target: /dev/sdm
+        target: /dev/sdc
         permissions: rwm
       - source: /dev/disk/by-id/usb-Samsung_PSSD_T9_S744NL0Y809472T-0:0
-        target: /dev/sdn
+        target: /dev/sdd
         permissions: rwm
     depends_on:
       scrutiny-web:

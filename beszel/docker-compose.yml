@@ -28,12 +28,15 @@ services:
       - ./beszel_socket:/beszel_socket
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Per-drive usage charts: the agent reports disk usage for anything
-      # mounted under /extra-filesystems/<label>. An empty .beszel dir on
+      # mounted under /extra-filesystems/<name>__<Label>. <name> is
+      # deliberately not a device, so the agent finds the drive by mount
+      # (the vault's sdX letter moves); <Label> is what the UI shows.
+      # An empty .beszel dir on
       # each drive is enough (usage is per-filesystem) and keeps the
       # agent from seeing any actual files.
-      - /mnt/vault/.beszel:/extra-filesystems/vault:ro
-      - /mnt/b1_4tb/.beszel:/extra-filesystems/micron:ro
-      - /mnt/b2_4tb/.beszel:/extra-filesystems/t9:ro
+      - /mnt/vault/.beszel:/extra-filesystems/vault__Vault:ro
+      - /mnt/b1_4tb/.beszel:/extra-filesystems/micron__Micron 4TB:ro
+      - /mnt/b2_4tb/.beszel:/extra-filesystems/t9__T9 4TB:ro
     environment:
       LISTEN: /beszel_socket/beszel.sock
       HUB_URL: http://localhost:8090

@@ -53,6 +53,15 @@ kindle.bjtn.xyz {
   }
 }
 
+# kobo's syncthing GUI
+kobo.bjtn.xyz {
+  import porkbun_tls
+  reverse_proxy 100.84.43.80:8384 {
+    # we need this because otherwise we'll get a "host check error"
+    header_up Host {upstream_hostport}
+  }
+}
+
 # steamdeck's syncthing GUI
 steamdeck.bjtn.xyz {
   import porkbun_tls
